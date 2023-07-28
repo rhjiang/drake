@@ -19,6 +19,9 @@
 #include "drake/solvers/choose_best_solver.h"
 #include "drake/solvers/ipopt_solver.h"
 #include "drake/solvers/snopt_solver.h"
+#include "drake/math/normalize_vector.h"
+
+#include <iostream>
 
 namespace drake {
 namespace geometry {
@@ -96,12 +99,6 @@ HPolyhedron Iris(const ConvexSets& obstacles, const Ref<const VectorXd>& sample,
       }
     }
 
-    if (options.require_sample_point_is_contained &&
-        ((A.topRows(num_constraints) * sample).array() >=
-         b.head(num_constraints).array())
-            .any()) {
-      break;
-    }
     P = HPolyhedron(A.topRows(num_constraints), b.head(num_constraints));
 
     iteration++;
@@ -343,7 +340,8 @@ class ClosestCollisionProgram {
       const multibody::Frame<double>& frameB, const ConvexSet& setA,
       const ConvexSet& setB, const Hyperellipsoid& E,
       const Eigen::Ref<const Eigen::MatrixXd>& A,
-      const Eigen::Ref<const Eigen::VectorXd>& b) {
+      const Eigen::Ref<const Eigen::VectorXd>& b, const IrisOptions& options,
+      const Eigen::Ref<const Eigen::VectorXd>& sample) {
     q_ = prog_.NewContinuousVariables(A.cols(), "q");
 
     P_constraint_ = prog_.AddLinearConstraint(
@@ -372,6 +370,28 @@ class ClosestCollisionProgram {
     // origin.
     prog_.SetInitialGuess(p_AA, Vector3d::Constant(.01));
     prog_.SetInitialGuess(p_BB, Vector3d::Constant(.01));
+
+    if (options.require_sample_point_is_contained){
+      // std::cout << "sample0: " << sample[0] << std::endl;
+      // std::cout << "sample1: " << sample[1] << std::endl;
+      // std::cout << "sample: " << (((E.A().transpose() * E.A() * (q_ - E.center()))).transpose())[1] << std::endl;
+      // std::cout << "hello wrld" << std::endl;
+      // TODO need to normalize constraint
+      VectorX<symbolic::Expression> ellipse_gradient = E.A().transpose() * E.A() * (q_ - E.center());
+      VectorX<symbolic::Expression> normalized_ellipse_gradient;
+      drake::math::NormalizeVector(ellipse_gradient,normalized_ellipse_gradient);
+      const symbolic::Expression& constraint_expr = normalized_ellipse_gradient.transpose() * (sample-q_);
+      double lb = -std::numeric_limits<double>::infinity();
+      double ub = 0.0;
+      prog_.AddConstraint(constraint_expr, lb, ub);
+
+      // prog_.AddConstraint(normalized_ellipse_gradient * (sample-q_),-std::numeric_limits<double>::infinity(),0.0);
+      // prog_.AddConstraint(((E.A().transpose() * E.A() * (q_ - E.center())) / 
+      // std::sqrt((E.A().transpose() * E.A() * (q_ - E.center())).transpose() * 
+      // (E.A().transpose() * E.A() * (q_ - E.center())))).transpose()
+      //         (sample-q_),-std::numeric_limits<double>::infinity(),0.0);
+
+    }
   }
 
   void UpdatePolytope(const Eigen::Ref<const Eigen::MatrixXd>& A,
@@ -513,6 +533,8 @@ class CounterExampleProgram {
     const double scale = 1.0 / std::sqrt(es.eigenvalues().maxCoeff() *
                                          es.eigenvalues().minCoeff());
     prog_.AddQuadraticErrorCost(scale * Asq, E.center(), q_);
+
+    
 
     prog_.AddConstraint(counter_example_constraint, q_);
   }
@@ -798,16 +820,7 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
           AddTangentToPolytope(E, point, 0.0, &A, &b, &num_constraints);
         }
       }
-
-      if (options.require_sample_point_is_contained) {
-        sample_point_requirement =
-            ((A.topRows(num_constraints) * sample).array() <=
-             b.head(num_constraints).array())
-                .any();
-      }
     }
-
-    if (!sample_point_requirement) break;
 
     // Use the fast nonlinear optimizer until it fails
     // num_collision_infeasible_samples consecutive times.
@@ -816,7 +829,7 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
       ClosestCollisionProgram prog(
           same_point_constraint, *frames.at(pair.geomA), *frames.at(pair.geomB),
           *sets.at(pair.geomA), *sets.at(pair.geomB), E,
-          A.topRows(num_constraints), b.head(num_constraints));
+          A.topRows(num_constraints), b.head(num_constraints), options, sample);
       while (sample_point_requirement &&
              consecutive_failures < options.num_collision_infeasible_samples) {
         if (prog.Solve(*solver, guess, &closest)) {
@@ -826,11 +839,7 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
           P_candidate =
               HPolyhedron(A.topRows(num_constraints), b.head(num_constraints));
           MakeGuessFeasible(P_candidate, options, closest, &guess);
-          if (options.require_sample_point_is_contained) {
-            sample_point_requirement =
-                A.row(num_constraints - 1) * sample <= b(num_constraints - 1);
-            if (!sample_point_requirement) break;
-          }
+
           prog.UpdatePolytope(A.topRows(num_constraints),
                               b.head(num_constraints));
         } else {
@@ -870,12 +879,7 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
                 P_candidate = HPolyhedron(A.topRows(num_constraints),
                                           b.head(num_constraints));
                 MakeGuessFeasible(P_candidate, options, closest, &guess);
-                if (options.require_sample_point_is_contained) {
-                  sample_point_requirement =
-                      A.row(num_constraints - 1) * sample <=
-                      b(num_constraints - 1);
-                  if (!sample_point_requirement) break;
-                }
+
                 counter_example_prog->UpdatePolytope(A.topRows(num_constraints),
                                                      b.head(num_constraints));
               } else {

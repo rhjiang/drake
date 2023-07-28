@@ -1,0 +1,3 @@
+Set parameter Username
+Academic license - for non-commercial use only - expires 2024-03-05
+Warning for adding constraints: zero or small (< 1e-13) coefficients, ignored

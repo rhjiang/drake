@@ -1,0 +1,38 @@
+{
+  "context": {
+    "date": "2023-07-25T15:13:15-04:00",
+    "host_name": "rhjiang-XPS-15-9500",
+    "executable": "/home/rhjiang/.cache/bazel/_bazel_rhjiang/df52e978c8c303d371192136dbeb61d8/execroot/drake/bazel-out/k8-opt/bin/geometry/benchmarking/iris_in_configuration_space_benchmarks",
+    "num_cpus": 12,
+    "mhz_per_cpu": 2600,
+    "cpu_scaling_enabled": false,
+    "caches": [
+      {
+        "type": "Data",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Instruction",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 2,
+        "size": 262144,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 3,
+        "size": 12582912,
+        "num_sharing": 12
+      }
+    ],
+    "load_avg": [2.35107,5.33252,5.74902],
+    "library_build_type": "release"
+  },
+  "benchmarks": [
