@@ -378,12 +378,13 @@ class ClosestCollisionProgram {
       // std::cout << "hello wrld" << std::endl;
       // TODO need to normalize constraint
       VectorX<symbolic::Expression> ellipse_gradient = E.A().transpose() * E.A() * (q_ - E.center());
-      VectorX<symbolic::Expression> normalized_ellipse_gradient;
-      drake::math::NormalizeVector(ellipse_gradient,normalized_ellipse_gradient);
-      const symbolic::Expression& constraint_expr = normalized_ellipse_gradient.transpose() * (sample-q_);
+      // VectorX<symbolic::Expression> normalized_ellipse_gradient;
+      // drake::math::NormalizeVector(ellipse_gradient,normalized_ellipse_gradient);
+      // const symbolic::Expression& constraint_expr = normalized_ellipse_gradient.transpose() * (sample-q_);
       double lb = -std::numeric_limits<double>::infinity();
       double ub = 0.0;
-      prog_.AddConstraint(constraint_expr, lb, ub);
+      // prog_.AddConstraint(constraint_expr, lb, ub);
+      prog_.AddConstraint(ellipse_gradient.transpose() * (sample - q_), lb, ub);
 
       // prog_.AddConstraint(normalized_ellipse_gradient * (sample-q_),-std::numeric_limits<double>::infinity(),0.0);
       // prog_.AddConstraint(((E.A().transpose() * E.A() * (q_ - E.center())) / 
