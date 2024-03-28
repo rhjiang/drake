@@ -10,15 +10,20 @@
 #include <tuple>
 
 #include <Eigen/Eigenvalues>
-#include <drake_vendor/libqhullcpp/Coordinates.h>
-#include <drake_vendor/libqhullcpp/Qhull.h>
-#include <drake_vendor/libqhullcpp/QhullFacet.h>
-#include <drake_vendor/libqhullcpp/QhullFacetList.h>
+#include <drake/solvers/binding.h>
 #include <fmt/format.h>
+#include <libqhullcpp/Coordinates.h>
+#include <libqhullcpp/Qhull.h>
+#include <libqhullcpp/QhullFacet.h>
+#include <libqhullcpp/QhullFacetList.h>
 
+#include "drake/geometry/optimization/affine_subspace.h"
 #include "drake/geometry/optimization/vpolytope.h"
 #include "drake/math/matrix_util.h"
 #include "drake/math/rotation_matrix.h"
+#include "drake/solvers/aggregate_costs_constraints.h"
+#include "drake/solvers/constraint.h"
+#include "drake/solvers/get_program_type.h"
 #include "drake/solvers/gurobi_solver.h"
 #include "drake/solvers/solve.h"
 
@@ -32,6 +37,8 @@ using Eigen::VectorXd;
 using math::RigidTransformd;
 using solvers::Binding;
 using solvers::Constraint;
+using solvers::LinearConstraint;
+using solvers::LinearCost;
 using solvers::MathematicalProgram;
 using solvers::MatrixXDecisionVariable;
 using solvers::VectorXDecisionVariable;
@@ -52,16 +59,6 @@ std::tuple<bool, solvers::MathematicalProgramResult> IsInfeasible(
   return {result.get_solution_result() ==
               solvers::SolutionResult::kInfeasibleConstraints,
           result};
-}
-
-// Checks if Ax ≤ b defines an empty set.
-bool DoIsEmpty(const Eigen::Ref<const MatrixXd>& A,
-               const Eigen::Ref<const VectorXd>& b) {
-  solvers::MathematicalProgram prog;
-  solvers::VectorXDecisionVariable x =
-      prog.NewContinuousVariables(A.cols(), "x");
-  prog.AddLinearConstraint(A, VectorXd::Constant(b.rows(), -kInf), b, x);
-  return std::get<0>(IsInfeasible(prog));
 }
 
 /* Checks whether the constraint cᵀ x ≤ d is already implied by the linear
@@ -109,20 +106,30 @@ bool IsRedundant(const Eigen::Ref<const MatrixXd>& c, double d,
   return !(polyhedron_is_empty || -result.get_optimal_cost() > d + tol);
 }
 
+/* Returns a trivially-infeasible HPolyhedron of a given dimension. */
+HPolyhedron ConstructInfeasibleHPolyhedron(int dimension) {
+  MatrixXd A_infeasible(2, dimension);
+  A_infeasible.setZero();
+  A_infeasible(0, 0) = 1;
+  A_infeasible(1, 0) = -1;
+  Eigen::Vector2d b_infeasible(-1, 0);
+  return HPolyhedron(A_infeasible, b_infeasible);
+}
+
 }  // namespace
 
-HPolyhedron::HPolyhedron() : ConvexSet(0) {}
+HPolyhedron::HPolyhedron() : ConvexSet(0, false) {}
 
 HPolyhedron::HPolyhedron(const Eigen::Ref<const MatrixXd>& A,
                          const Eigen::Ref<const VectorXd>& b)
-    : ConvexSet(A.cols()), A_{A}, b_{b} {
+    : ConvexSet(A.cols(), false), A_(A), b_(b) {
   CheckInvariants();
 }
 
 HPolyhedron::HPolyhedron(const QueryObject<double>& query_object,
                          GeometryId geometry_id,
                          std::optional<FrameId> reference_frame)
-    : ConvexSet(3) {
+    : ConvexSet(3, false) {
   std::pair<MatrixXd, VectorXd> Ab_G;
   query_object.inspector().GetShape(geometry_id).Reify(this, &Ab_G);
 
@@ -136,14 +143,135 @@ HPolyhedron::HPolyhedron(const QueryObject<double>& query_object,
   b_ = Ab_G.second - Ab_G.first * X_GE.translation();
 }
 
-HPolyhedron::HPolyhedron(const VPolytope& vpoly)
-    : ConvexSet(vpoly.ambient_dimension()) {
+HPolyhedron::HPolyhedron(const VPolytope& vpoly, double tol)
+    : ConvexSet(vpoly.ambient_dimension(), false) {
+  // First, handle the case where the VPolytope is empty.
+  if (vpoly.IsEmpty()) {
+    if (vpoly.ambient_dimension() == 0) {
+      throw std::runtime_error(
+          "Cannot convert an empty VPolytope with ambient dimension zero into "
+          "a HPolyhedron.");
+    } else {
+      // Just create an infeasible HPolyhedron.
+      *this = ConstructInfeasibleHPolyhedron(vpoly.ambient_dimension());
+      return;
+    }
+  }
+  if (vpoly.ambient_dimension() == 1) {
+    // In 1D, QHull doesn't work. We can simply choose the largest and smallest
+    // points, and add a hyperplane there.
+    double min_val = vpoly.vertices().minCoeff();
+    double max_val = vpoly.vertices().maxCoeff();
+    Eigen::MatrixXd A(2, 1);
+    Eigen::VectorXd b(2);
+    // x <= max_val and x >= min_val (written as -x <= -min_val)
+    A << 1, -1;
+    b << max_val, -min_val;
+    *this = HPolyhedron(A, b);
+    return;
+  }
+  // Next, handle the case where the VPolytope is not full dimensional.
+  const AffineSubspace affine_hull(vpoly, tol);
+  if (affine_hull.AffineDimension() < affine_hull.ambient_dimension()) {
+    // This special case avoids two QHull errors: QH6214 and QH6154.
+    // QH6214 is due to the VPolytope not having enough vertices to make a
+    // full dimensional simplex, and QH6154 is due to the VPolytope not being
+    // full-dimensional, because all the vertices lie along a proper affine
+    // subspace. We can handle both of these cases by projecting onto the
+    // affine hull and doing the computations there. Then, we lift back to the
+    // original space, and add hyperplanes to require the point lie on the
+    // affine subspace.
+    Eigen::MatrixXd points_local =
+        affine_hull.ToLocalCoordinates(vpoly.vertices());
+
+    // Note that QHull will not function in zero or one dimensional spaces, so
+    // we handle these separately here.
+    Eigen::MatrixXd global_A;
+    Eigen::VectorXd global_b;
+    if (affine_hull.AffineDimension() == 0) {
+      // If it's just a point, then the orthogonal complement constraints
+      // will do all the work, and we can set global_A and global_b to empty.
+      global_A = Eigen::MatrixXd::Zero(0, ambient_dimension());
+      global_b = Eigen::VectorXd::Zero(0);
+    } else if (affine_hull.AffineDimension() == 1) {
+      // In this case, we have a line, so we just pick the highest and lowest
+      // points on that line (w.r.t. the direction of the one vector in the
+      // affine basis) and put hyperplanes there.
+      int min_idx, max_idx;
+      Eigen::VectorXd point_local_vector = points_local.row(0);
+
+      point_local_vector.minCoeff(&min_idx);
+      point_local_vector.maxCoeff(&max_idx);
+      Eigen::VectorXd lower_point = vpoly.vertices().col(min_idx);
+      Eigen::VectorXd upper_point = vpoly.vertices().col(max_idx);
+      Eigen::VectorXd direction = affine_hull.basis();
+
+      global_A = Eigen::MatrixXd::Zero(2, ambient_dimension());
+      global_A.row(0) = -direction;
+      global_A.row(1) = direction;
+      global_b = Eigen::VectorXd::Zero(2);
+      global_b[0] = -lower_point.dot(direction);
+      global_b[1] = upper_point.dot(direction);
+    } else {
+      // Construct a new VPolytope in the local coordinates, and then try
+      // converting it to an HPolyhedron. This VPolytope is full dimensional
+      // and has enough points for QHull, so in the subsequent call of the
+      // VPolytope -> HPolyhedron constructor, none of this conditional block
+      // is considered, and it goes directly to QHull. If QHull has additional
+      // errors besides the dimension ones, they will be caught there.
+      HPolyhedron hpoly_subspace(VPolytope{points_local});
+
+      // Now, lift the HPolyhedron to the original ambient space. A point x in
+      // R^n is projected to P(x-d), where d is the AffineSubspace translation,
+      // and P is the projection matrix associated with the basis B (so that PB
+      // is the identity matrix, mapping points in the local coordinates of the
+      // AffineSubspace to themselves, where B is the matrix whose columns are
+      // the basis vectors). Thus, an HPolyhedron in local coordinates
+      // {Ay <= b : y in R^m} can be lifted to an HPolyhedron in global
+      // coordinates by substituting P(x-d) for y. After simplification, we have
+      // {APx <= b + APd : x in R^n}.
+
+      // First, we obtain the matrix P. Because it's a linear operator, we can
+      // compute its matrix by passing in the standard basis vectors (centered
+      // at the translation of the AffineSubspace).
+      Eigen::MatrixXd P_in =
+          Eigen::MatrixXd::Identity(ambient_dimension(), ambient_dimension());
+      Eigen::MatrixXd P = affine_hull.ToLocalCoordinates(
+          P_in.colwise() + affine_hull.translation());
+
+      // Now, we construct the global versions of A and b.
+      global_A = hpoly_subspace.A() * P;
+      global_b = hpoly_subspace.b() +
+                 hpoly_subspace.A() * P * affine_hull.translation();
+    }
+
+    // Finally, we add additional constraints from the orthogonal complement
+    // basis. This ensures that the points in the new HPolyhedron lie along the
+    // affine hull of the VPolytope.
+    Eigen::MatrixXd orthogonal_complement_basis =
+        affine_hull.OrthogonalComplementBasis();
+    Eigen::MatrixXd orth_A(2 * orthogonal_complement_basis.cols(),
+                           ambient_dimension());
+    orth_A << orthogonal_complement_basis.transpose(),
+        -orthogonal_complement_basis.transpose();
+    Eigen::VectorXd orth_b = orth_A * affine_hull.translation();
+
+    Eigen::MatrixXd full_A(global_A.rows() + orth_A.rows(),
+                           ambient_dimension());
+    full_A << global_A, orth_A;
+    Eigen::VectorXd full_b(global_b.size() + orth_b.size());
+    full_b << global_b, orth_b;
+    *this = HPolyhedron(full_A, full_b);
+    return;
+  }
+
+  // Now that we know that the VPolytope is full dimensional, we can call QHull.
   orgQhull::Qhull qhull;
   qhull.runQhull("", vpoly.ambient_dimension(), vpoly.vertices().cols(),
                  vpoly.vertices().data(), "");
   if (qhull.qhullStatus() != 0) {
     throw std::runtime_error(
-        fmt::format("Qhull terminated with status {} and  message:\n{}",
+        fmt::format("Qhull exited with status {} and  message:\n{}",
                     qhull.qhullStatus(), qhull.qhullMessage()));
   }
   A_.resize(qhull.facetCount(), ambient_dimension());
@@ -157,6 +285,107 @@ HPolyhedron::HPolyhedron(const VPolytope& vpoly)
   }
 }
 
+HPolyhedron::HPolyhedron(const MathematicalProgram& prog)
+    : ConvexSet(prog.num_vars(), false) {
+  // Preconditions
+  DRAKE_THROW_UNLESS(prog.num_vars() > 0);
+  DRAKE_THROW_UNLESS(prog.GetAllConstraints().size() > 0);
+  DRAKE_THROW_UNLESS(solvers::GetProgramType(prog) ==
+                     solvers::ProgramType::kLP);
+
+  // Get linear equality constraints.
+  std::vector<Eigen::Triplet<double>> A_triplets;
+  std::vector<double> b;
+  int A_row_count = 0;
+  std::vector<int> unused_linear_eq_y_start_indices;
+  int unused_num_rows_added = 0;
+  solvers::internal::ParseLinearEqualityConstraints(
+      prog, &A_triplets, &b, &A_row_count, &unused_linear_eq_y_start_indices,
+      &unused_num_rows_added);
+
+  // Linear equality constraints Ax = b are parsed in the form Ax <= b. So we
+  // add in the reverse of the constraint, Ax >= b, encoded as -Ax <= -b. This
+  // is implemented by taking each triplet (i, j, v) and adding in
+  // (i + N, j, -v), where N is the number of rows of A before we start adding
+  // new triplets.
+  const int num_equality_triplets = A_triplets.size();
+  const int& num_equality_constraints = A_row_count;
+  for (int i = 0; i < num_equality_triplets; ++i) {
+    const Eigen::Triplet<double>& triplet = A_triplets.at(i);
+    A_triplets.emplace_back(triplet.row() + num_equality_constraints,
+                            triplet.col(), -triplet.value());
+  }
+  // We also set b := [b; -b].
+  for (int i = 0; i < num_equality_constraints; ++i) {
+    b.push_back(-1 * b[i]);
+  }
+  A_row_count *= 2;
+
+  // Get linear inequality constraints.
+  std::vector<std::vector<std::pair<int, int>>>
+      unused_linear_constraint_dual_indices;
+  solvers::internal::ParseLinearConstraints(
+      prog, &A_triplets, &b, &A_row_count,
+      &unused_linear_constraint_dual_indices, &unused_num_rows_added);
+
+  // Check that none of the linear inequality constraints are trivially
+  // infeasible by requiring a variable be at least ∞ or at most -∞. If this is
+  // the case, return a trivially infeasible HPolyhedron. Constraints that
+  // violate this condition may not be returned by ParseLinearConstraints.
+  for (const auto& binding : prog.linear_constraints()) {
+    if (binding.evaluator()->lower_bound().maxCoeff() == kInf ||
+        binding.evaluator()->upper_bound().minCoeff() == -kInf) {
+      *this = ConstructInfeasibleHPolyhedron(prog.num_vars());
+      return;
+    }
+  }
+
+  // Get bounding box constraints.
+  VectorXd lb;
+  VectorXd ub;
+  solvers::AggregateBoundingBoxConstraints(prog, &lb, &ub);
+
+  for (int i = 0; i < lb.size(); ++i) {
+    // If lb[i] == Infinity or ub[i] == -Infinity, we have a trivial
+    // infeasibility, so we make a trivially infeasible HPolyhedron by just
+    // including the constraints x <= -1, x >= 0, where x is the first decision
+    // variable.
+    if (lb[i] == kInf || ub[i] == -kInf) {
+      *this = ConstructInfeasibleHPolyhedron(prog.num_vars());
+      return;
+    } else {
+      A_triplets.emplace_back(A_row_count, i, 1);
+      b.push_back(ub[i]);
+      ++A_row_count;
+      A_triplets.emplace_back(A_row_count, i, -1);
+      b.push_back(-lb[i]);
+      ++A_row_count;
+    }
+  }
+  // Form the A and b matrices of the HPolyhedron.
+  Eigen::SparseMatrix<double, Eigen::RowMajor> A_sparse(A_row_count,
+                                                        prog.num_vars());
+  A_sparse.setFromTriplets(A_triplets.begin(), A_triplets.end());
+
+  // Identify the rows that do not contain any infinities, as the rows to keep.
+  // Since we have filtered out infinities that render the problem infeasible
+  // above, these correspond to inequalities that are trivially satisfied by all
+  // vectors x, and need not be included in the HPolyhedron.
+  std::vector<int> rows_to_keep;
+  rows_to_keep.reserve(A_sparse.rows());
+  for (int i = 0; i < ssize(b); ++i) {
+    if (abs(b[i]) < kInf) {
+      rows_to_keep.push_back(i);
+    }
+  }
+
+  VectorXd b_eigen(b.size());
+  b_eigen = VectorXd::Map(b.data(), b.size());
+
+  *this = HPolyhedron(A_sparse.toDense()(rows_to_keep, Eigen::all),
+                      b_eigen(rows_to_keep));
+}
+
 HPolyhedron::~HPolyhedron() = default;
 
 Hyperellipsoid HPolyhedron::MaximumVolumeInscribedEllipsoid() const {
@@ -165,6 +394,11 @@ Hyperellipsoid HPolyhedron::MaximumVolumeInscribedEllipsoid() const {
   MatrixXDecisionVariable C = prog.NewSymmetricContinuousVariables(N, "C");
   VectorXDecisionVariable d = prog.NewContinuousVariables(N, "d");
 
+  // Compute rowwise norms for later use in normalization of linear constraints.
+  MatrixXd augmented_matrix(A_.rows(), A_.cols() + b_.cols());
+  augmented_matrix << A_, b_;
+  VectorXd row_norms = augmented_matrix.rowwise().norm();
+
   // max log det (C).  This method also imposes C ≽ 0.
   prog.AddMaximizeLogDeterminantCost(C.cast<Expression>());
   // |aᵢC|₂ ≤ bᵢ - aᵢd, ∀i
@@ -172,6 +406,8 @@ Hyperellipsoid HPolyhedron::MaximumVolumeInscribedEllipsoid() const {
   // vars = [d; C.col(0); C.col(1); ...; C.col(n-1)]
   // A_lorentz = block_diagonal(-A_.row(i), A_.row(i), ..., A_.row(i))
   // b_lorentz = [b_(i); 0; ...; 0]
+  // We also normalize each row, by dividing each instance of aᵢ and bᵢ with the
+  // corresponding row norm.
   VectorX<symbolic::Variable> vars(C.rows() * C.cols() + d.rows());
   vars.head(d.rows()) = d;
   for (int i = 0; i < C.cols(); ++i) {
@@ -183,11 +419,12 @@ Hyperellipsoid HPolyhedron::MaximumVolumeInscribedEllipsoid() const {
   Eigen::VectorXd b_lorentz = Eigen::VectorXd::Zero(1 + C.cols());
   for (int i = 0; i < b_.size(); ++i) {
     A_lorentz.setZero();
-    A_lorentz.block(0, 0, 1, A_.cols()) = -A_.row(i);
+    A_lorentz.block(0, 0, 1, A_.cols()) = -A_.row(i) / row_norms(i);
     for (int j = 0; j < C.cols(); ++j) {
-      A_lorentz.block(j + 1, (j + 1) * C.cols(), 1, A_.cols()) = A_.row(i);
+      A_lorentz.block(j + 1, (j + 1) * C.cols(), 1, A_.cols()) =
+          A_.row(i) / row_norms(i);
     }
-    b_lorentz(0) = b_(i);
+    b_lorentz(0) = b_(i) / row_norms(i);
     prog.AddLorentzConeConstraint(A_lorentz, b_lorentz, vars);
   }
   auto result = solvers::Solve(prog);
@@ -232,6 +469,19 @@ VectorXd HPolyhedron::ChebyshevCenter() const {
   return result.GetSolution(x);
 }
 
+HPolyhedron HPolyhedron::Scale(double scale,
+                               std::optional<Eigen::VectorXd> center) const {
+  DRAKE_THROW_UNLESS(scale >= 0.0);
+  if (center) {
+    DRAKE_THROW_UNLESS(center->size() == ambient_dimension());
+  } else {
+    center = ChebyshevCenter();
+  }
+  return HPolyhedron(
+      A_, std::pow(scale, 1.0 / ambient_dimension()) * (b_ - A_ * *center) +
+              A_ * *center);
+}
+
 HPolyhedron HPolyhedron::CartesianProduct(const HPolyhedron& other) const {
   MatrixXd A_product = MatrixXd::Zero(A_.rows() + other.A().rows(),
                                       A_.cols() + other.A().cols());
@@ -263,47 +513,57 @@ HPolyhedron HPolyhedron::Intersection(const HPolyhedron& other,
 
 VectorXd HPolyhedron::UniformSample(
     RandomGenerator* generator,
-    const Eigen::Ref<const Eigen::VectorXd>& previous_sample) const {
+    const Eigen::Ref<const Eigen::VectorXd>& previous_sample,
+    const int mixing_steps) const {
+  DRAKE_THROW_UNLESS(mixing_steps >= 1);
+
   std::normal_distribution<double> gaussian;
-  // Choose a random direction.
   VectorXd direction(ambient_dimension());
-  for (int i = 0; i < direction.size(); ++i) {
-    direction[i] = gaussian(*generator);
-  }
-  // Find max and min θ subject to
-  //   A(previous_sample + θ*direction) ≤ b,
-  // aka ∀i, θ * (A * direction)[i] ≤ (b - A * previous_sample)[i].
-  VectorXd line_b = b_ - A_ * previous_sample;
-  VectorXd line_a = A_ * direction;
-  double theta_max = std::numeric_limits<double>::infinity();
-  double theta_min = -theta_max;
-  for (int i = 0; i < line_a.size(); ++i) {
-    if (line_a[i] < 0.0) {
-      theta_min = std::max(theta_min, line_b[i] / line_a[i]);
-    } else if (line_a[i] > 0.0) {
-      theta_max = std::min(theta_max, line_b[i] / line_a[i]);
+  VectorXd current_sample = previous_sample;
+
+  for (int step = 0; step < mixing_steps; ++step) {
+    // Choose a random direction.
+    for (int i = 0; i < direction.size(); ++i) {
+      direction[i] = gaussian(*generator);
     }
+    // Find max and min θ subject to
+    //   A(previous_sample + θ*direction) ≤ b,
+    // aka ∀i, θ * (A * direction)[i] ≤ (b - A * previous_sample)[i].
+    VectorXd line_b = b_ - A_ * current_sample;
+    VectorXd line_a = A_ * direction;
+    double theta_max = std::numeric_limits<double>::infinity();
+    double theta_min = -theta_max;
+    for (int i = 0; i < line_a.size(); ++i) {
+      if (line_a[i] < 0.0) {
+        theta_min = std::max(theta_min, line_b[i] / line_a[i]);
+      } else if (line_a[i] > 0.0) {
+        theta_max = std::min(theta_max, line_b[i] / line_a[i]);
+      }
+    }
+    if (std::isinf(theta_max) || std::isinf(theta_min) ||
+        theta_max < theta_min) {
+      throw std::invalid_argument(fmt::format(
+          "The Hit and Run algorithm failed to find a feasible point in the "
+          "set. The `previous_sample` must be in the set.\n"
+          "max(A * previous_sample - b) = {}",
+          (A_ * current_sample - b_).maxCoeff()));
+    }
+    // Now pick θ uniformly from [θ_min, θ_max).
+    std::uniform_real_distribution<double> uniform_theta(theta_min, theta_max);
+    const double theta = uniform_theta(*generator);
+    current_sample = current_sample + theta * direction;
   }
-  if (std::isinf(theta_max) || std::isinf(theta_min) || theta_max < theta_min) {
-    throw std::invalid_argument(fmt::format(
-        "The Hit and Run algorithm failed to find a feasible point in the set. "
-        "The `previous_sample` must be in the set.\nmax(A * previous_sample - "
-        "b) = {}",
-        (A_ * previous_sample - b_).maxCoeff()));
-  }
-  // Now pick θ uniformly from [θ_min, θ_max).
-  std::uniform_real_distribution<double> uniform_theta(theta_min, theta_max);
-  const double theta = uniform_theta(*generator);
   // The new sample is previous_sample + θ * direction.
-  return previous_sample + theta * direction;
+  return current_sample;
 }
 
 // Note: This method only exists to effectively provide ChebyshevCenter(),
 // which is a non-static class method, as a default argument for
 // previous_sample in the UniformSample method above.
-VectorXd HPolyhedron::UniformSample(RandomGenerator* generator) const {
+VectorXd HPolyhedron::UniformSample(RandomGenerator* generator,
+                                    const int mixing_steps) const {
   VectorXd center = ChebyshevCenter();
-  return UniformSample(generator, center);
+  return UniformSample(generator, center, mixing_steps);
 }
 
 HPolyhedron HPolyhedron::MakeBox(const Eigen::Ref<const VectorXd>& lb,
@@ -338,7 +598,7 @@ HPolyhedron HPolyhedron::MakeL1Ball(const int dim) {
   return {A, b};
 }
 
-bool HPolyhedron::DoIsBounded() const {
+std::optional<bool> HPolyhedron::DoIsBoundedShortcut() const {
   if (A_.rows() < A_.cols()) {
     return false;
   }
@@ -363,11 +623,22 @@ bool HPolyhedron::DoIsBounded() const {
   return result.is_success();
 }
 
+bool HPolyhedron::DoIsEmpty() const {
+  if (ambient_dimension() == 0) {
+    return false;
+  }
+  solvers::MathematicalProgram prog;
+  solvers::VectorXDecisionVariable x =
+      prog.NewContinuousVariables(A_.cols(), "x");
+  prog.AddLinearConstraint(A_, VectorXd::Constant(b_.rows(), -kInf), b_, x);
+  return std::get<0>(IsInfeasible(prog));
+}
+
 bool HPolyhedron::ContainedIn(const HPolyhedron& other, double tol) const {
   DRAKE_THROW_UNLESS(other.A().cols() == A_.cols());
   // `this` defines an empty set and therefore is contained in any `other`
   // HPolyhedron.
-  if (DoIsEmpty(A_, b_)) {
+  if (DoIsEmpty()) {
     return true;
   }
 
@@ -439,8 +710,9 @@ HPolyhedron HPolyhedron::DoIntersectionWithChecks(const HPolyhedron& other,
       A.row(num_kept) = other.A().row(i);
       b.row(num_kept) = other.b().row(i);
       ++num_kept;
-      if (DoIsEmpty(A.topRows(num_kept), b.topRows(num_kept))) {
-        return {A.topRows(num_kept), b.topRows(num_kept)};
+      HPolyhedron maybe_empty(A.topRows(num_kept), b.topRows(num_kept));
+      if (maybe_empty.IsEmpty()) {
+        return maybe_empty;
       }
     }
   }
@@ -455,7 +727,7 @@ HPolyhedron HPolyhedron::ReduceInequalities(double tol) const {
   VectorXd b_new(A_new.rows());
   int i = 0;
   for (int j = 0; j < A_.rows(); ++j) {
-    if (redundant_indices.count(j) == 0) {
+    if (!redundant_indices.contains(j)) {
       A_new.row(i) = A_.row(j);
       b_new.row(i) = b_.row(j);
       ++i;
@@ -465,65 +737,36 @@ HPolyhedron HPolyhedron::ReduceInequalities(double tol) const {
 }
 
 std::set<int> HPolyhedron::FindRedundant(double tol) const {
-  const int num_inequalities = A_.rows();
-  const int num_vars = A_.cols();
-
-  std::set<int> kept_indices;
-  for (int i = 0; i < num_inequalities; ++i) {
-    kept_indices.emplace(i);
-  }
-  // TODO(hongkai.dai): create just one program and remove the redundant
-  // constraint
-  for (int excluded_index = 0; excluded_index < num_inequalities;
-       ++excluded_index) {
-    solvers::MathematicalProgram prog;
-    solvers::VectorXDecisionVariable x =
-        prog.NewContinuousVariables(num_vars, "x");
-
-    std::set<int> cur_kept_indices = kept_indices;
-    cur_kept_indices.erase(excluded_index);
-
-    // Current constraints.
-    for (const int i : cur_kept_indices) {
-      prog.AddLinearConstraint(A_.row(i), VectorXd::Constant(1, -kInf),
-                               b_.row(i), x);
-    }
-
-    // First we check whether the current index defines an empty set. If it
-    // does, then any new constraint is already redundant. This check is
-    // expected before calling IsRedundant.
-    if (std::get<0>(IsInfeasible(prog))) {
-      kept_indices.erase(excluded_index);
-    } else {
-      // Constraint to check redundant.
-      Binding<solvers::LinearConstraint> redundant_constraint_binding =
-          prog.AddLinearConstraint(
-              A_.row(excluded_index), VectorXd::Constant(1, -kInf),
-              b_.row(excluded_index) + VectorXd::Ones(1), x);
-
-      // Construct cost binding for prog.
-      Binding<solvers::LinearCost> program_cost_binding =
-          prog.AddLinearCost(-A_.row(excluded_index), 0, x);
-
-      // The current inequality is redundant.
-      if (IsRedundant(A_.row(excluded_index), b_(excluded_index), &prog,
-                      &redundant_constraint_binding, &program_cost_binding,
-                      tol)) {
-        kept_indices.erase(excluded_index);
-      }
-    }
-  }
+  // This method is based on removing each constraint and solving the resulting
+  // LP. If the optimal cost is greater than the constraint's right hand side,
+  // then the constraint is redundant.
+  // Possible future speed up: solve duals instead of primal in parallel,
+  // however this would require building num_threads mathematical programs and
+  // may not be worth it.
   std::set<int> redundant_indices;
-  for (int i = 0; i < num_inequalities; ++i) {
-    if (kept_indices.count(i) == 0) {
-      redundant_indices.emplace(i);
+  MathematicalProgram prog;
+  const int num_vars = A_.cols();
+  const int num_cons = A_.rows();
+  const auto x = prog.NewContinuousVariables(num_vars, "x");
+  std::vector<Binding<LinearConstraint>> bindings_vec;
+  for (int i = 0; i < num_cons; ++i) {
+    bindings_vec.push_back(prog.AddLinearConstraint(
+        A_.row(i), -std::numeric_limits<double>::infinity(), b_[i], x));
+  }
+  auto const_binding = prog.AddLinearCost(-A_.row(0), 0, x);
+  for (int i = 0; i < num_cons; ++i) {
+    prog.RemoveConstraint(bindings_vec.at(i));
+    const_binding.evaluator()->UpdateCoefficients(-A_.row(i), 0);
+    const auto result = Solve(prog);
+    if ((result.is_success() && -result.get_optimal_cost() > b_[i] + tol) ||
+        !result.is_success()) {
+      // Bring back the constraint, it is not redundant.
+      prog.AddConstraint(bindings_vec.at(i));
+    } else {
+      redundant_indices.insert(i);
     }
   }
   return redundant_indices;
-}
-
-bool HPolyhedron::IsEmpty() const {
-  return DoIsEmpty(A_, b_);
 }
 
 std::unique_ptr<ConvexSet> HPolyhedron::DoClone() const {
@@ -536,13 +779,17 @@ bool HPolyhedron::DoPointInSet(const Eigen::Ref<const VectorXd>& x,
   return ((A_ * x).array() <= b_.array() + tol).all();
 }
 
-void HPolyhedron::DoAddPointInSetConstraints(
+std::pair<VectorX<Variable>, std::vector<Binding<Constraint>>>
+HPolyhedron::DoAddPointInSetConstraints(
     MathematicalProgram* prog,
     const Eigen::Ref<const VectorXDecisionVariable>& vars) const {
-  prog->AddLinearConstraint(
+  VectorX<Variable> new_vars;
+  std::vector<Binding<Constraint>> new_constraints;
+  new_constraints.push_back(prog->AddLinearConstraint(
       A_,
       VectorXd::Constant(b_.size(), -std::numeric_limits<double>::infinity()),
-      b_, vars);
+      b_, vars));
+  return {std::move(new_vars), std::move(new_constraints)};
 }
 
 std::vector<Binding<Constraint>>

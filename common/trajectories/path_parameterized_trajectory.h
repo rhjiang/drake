@@ -15,8 +15,8 @@ namespace trajectories {
 /**
  * A trajectory defined by a path and timing trajectory.
  *
- * Using a path of form `q(s)` and a time_scaling of the form `s(t)`, a full
- * trajectory of form `q(t) = q(s(t))` is modeled.
+ * Using a path of form `r(s)` and a time_scaling of the form `s(t)`, a full
+ * trajectory of form `q(t) = r(s(t))` is modeled.
  *
  * @tparam_default_scalar
  */
@@ -69,6 +69,10 @@ class PathParameterizedTrajectory final : public Trajectory<T> {
   // @warning This method comes with the same caveats as value(). See value()
   // @pre derivative_order must be non-negative.
   MatrixX<T> DoEvalDerivative(const T& t, int derivative_order) const override;
+
+  // Uses DerivativeTrajectory to provide a derivative object.
+  std::unique_ptr<Trajectory<T>> DoMakeDerivative(
+      int derivative_order) const final;
 
   // Evaluates the Bell Polynomial B_n,k(x) for use in calculating the
   // derivative.

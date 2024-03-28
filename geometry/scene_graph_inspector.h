@@ -15,6 +15,7 @@
 #include "drake/geometry/geometry_set.h"
 #include "drake/geometry/geometry_version.h"
 #include "drake/geometry/internal_frame.h"
+#include "drake/geometry/proximity/polygon_surface_mesh.h"
 #include "drake/geometry/proximity/triangle_surface_mesh.h"
 #include "drake/geometry/proximity/volume_mesh.h"
 #include "drake/geometry/shape_specification.h"
@@ -87,6 +88,11 @@ class SceneGraphInspector {
    (including the world frame).  */
   int num_frames() const;
 
+  /** Returns all of the source ids in the scene graph. The order is guaranteed
+   to be stable and consistent. The first element is the SceneGraph-internal
+   source.  */
+  std::vector<SourceId> GetAllSourceIds() const;
+
   /** Returns all of the frame ids in the scene graph. The order is guaranteed
    to be stable and consistent. The ids include the world frame's id.  */
   std::vector<FrameId> GetAllFrameIds() const;
@@ -101,8 +107,10 @@ class SceneGraphInspector {
   int num_geometries() const;
 
   /** Returns the set of all ids for registered geometries. The order is
-   guaranteed to be stable and consistent.  */
-  std::vector<GeometryId> GetAllGeometryIds() const;
+   guaranteed to be stable and consistent.
+   @param role  The requested role; if omitted, all geometries are returned.  */
+  std::vector<GeometryId> GetAllGeometryIds(
+      std::optional<Role> role = std::nullopt) const;
 
   /** Returns the geometry ids that are *implied* by the given GeometrySet and
    `role`. Remember that a GeometrySet can reference a FrameId in place of the
@@ -118,10 +126,13 @@ class SceneGraphInspector {
    @param geometry_set    The encoding of the set of geometries.
    @param role            The requested role; if omitted, all geometries
                           registered to the frame are returned.
-   @returns The requested unique geometry ids.  */
+   @returns The requested unique geometry ids.
+
+   @warning For C++ users: this returns an _unordered_ set, which means
+   iteration order will be non-deterministic.  */
   std::unordered_set<GeometryId> GetGeometryIds(
       const GeometrySet& geometry_set,
-      const std::optional<Role>& role = std::nullopt) const;
+      std::optional<Role> role = std::nullopt) const;
 
   /** Reports the _total_ number of geometries in the scene graph with the
    indicated role.  */
@@ -391,6 +402,13 @@ class SceneGraphInspector {
    order is guaranteed to be stable and consistent.  */
   std::vector<GeometryId> GetAllDeformableGeometryIds() const;
 
+  /** Returns the convex hull (a polytope) associated with the given
+   `geometry_id`, if it exists. Basic primitive shapes don't have convex hulls
+   (including, arbitrarily, Box). But Mesh and Convex shapes do. Alternatively,
+   if you already have a Mesh or Convex you can call Mesh::convex_hull() or
+   Convex::convex_hull(), respectively. */
+  const PolygonSurfaceMesh<double>* GetConvexHull(GeometryId geometry_id) const;
+
   /** Reports true if the two geometries with given ids `geometry_id1` and
    `geometry_id2`, define a collision pair that has been filtered out.
    @throws std::exception if either id does not map to a registered geometry
@@ -399,12 +417,10 @@ class SceneGraphInspector {
   bool CollisionFiltered(GeometryId geometry_id1,
                          GeometryId geometry_id2) const;
 
-  /** Introspects the geometry indicated by the given `geometry_id`. The
-   geometry will be passed into the provided `reifier`. This is the mechanism by
-   which external code can discover and respond to the different types of
-   geometries stored in SceneGraph. See ShapeToString as an example.
-   @throws std::exception if the `geometry_id` does not refer to a valid
-   geometry.  */
+  DRAKE_DEPRECATED(
+      "2024-06-01",
+      "This shortcut function is being removed. "
+      "Instead, call inspector.GetShape(geometry_id).Reify(reifier)")
   void Reify(GeometryId geometry_id, ShapeReifier* reifier) const;
 
   /** Obtains a new GeometryInstance that copies the geometry indicated by the
@@ -414,8 +430,8 @@ class SceneGraphInspector {
            off of the original, but the returned id() will completely unique.
    @throws std::exception if the `geometry_id` does not refer to a valid
    geometry.  */
-  std::unique_ptr<GeometryInstance>
-  CloneGeometryInstance(GeometryId geometry_id) const;
+  std::unique_ptr<GeometryInstance> CloneGeometryInstance(
+      GeometryId geometry_id) const;
   //@}
 
  private:

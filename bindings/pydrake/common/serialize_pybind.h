@@ -10,13 +10,10 @@
 #include <variant>
 #include <vector>
 
-#include "bindings/pydrake/common/cpp_template_pybind.h"
-#include "bindings/pydrake/pydrake_pybind.h"
-#include "pybind11/eigen.h"
-#include "pybind11/pybind11.h"
-#include "pybind11/stl.h"
 #include <fmt/format.h>
 
+#include "drake/bindings/pydrake/common/cpp_template_pybind.h"
+#include "drake/bindings/pydrake/pydrake_pybind.h"
 #include "drake/common/drake_copyable.h"
 #include "drake/common/drake_throw.h"
 #include "drake/common/eigen_types.h"
@@ -171,15 +168,15 @@ class DefAttributesArchive {
   }
 
   // Partial specialization for List.
-  template <typename U>
-  static py::object CalcSchemaType(const std::vector<U>*) {
+  template <typename U, typename A>
+  static py::object CalcSchemaType(const std::vector<U, A>*) {
     auto u_type = CalcSchemaType(static_cast<U*>(nullptr));
     return GetTemplateClass("List")[u_type];
   }
 
   // Partial specialization for Dict.
-  template <typename U, typename V>
-  static py::object CalcSchemaType(const std::map<U, V>*) {
+  template <typename U, typename V, typename C, typename A>
+  static py::object CalcSchemaType(const std::map<U, V, C, A>*) {
     auto u_type = CalcSchemaType(static_cast<U*>(nullptr));
     auto v_type = CalcSchemaType(static_cast<V*>(nullptr));
     auto inner_types = py::make_tuple(u_type, v_type);

@@ -81,8 +81,12 @@ class PrismaticJoint final : public Joint<T> {
     return axis_;
   }
 
-  /// Returns `this` joint's damping constant in N⋅s/m.
-  double damping() const { return this->damping_vector()[0]; }
+  /// Returns `this` joint's default damping constant in N⋅s/m.
+  double default_damping() const { return this->default_damping_vector()[0]; }
+
+  DRAKE_DEPRECATED("2024-06-01", "Use default_damping() instead.")
+  double damping() const { return this->default_damping_vector()[0]; }
+
 
   /// Sets the default value of viscous damping for this joint, in N⋅s/m.
   /// @throws std::exception if damping is negative.
@@ -174,6 +178,25 @@ class PrismaticJoint final : public Joint<T> {
     return *this;
   }
 
+  /// Returns the Context dependent damping coefficient stored as a parameter in
+  /// `context`. Refer to default_damping() for details.
+  /// @param[in] context The context storing the state and parameters for the
+  /// model to which `this` joint belongs.
+  const T& GetDamping(const Context<T>& context) const {
+    return this->GetDampingVector(context)[0];
+  }
+
+  /// Sets the value of the viscous damping coefficient for this joint, stored
+  /// as a parameter in `context`. Refer to default_damping() for details.
+  /// @param[out] context The context storing the state and parameters for the
+  /// model to which `this` joint belongs.
+  /// @param[in] damping The damping value.
+  /// @throws std::exception if `damping` is negative.
+  void SetDamping(Context<T>* context, const T& damping) const {
+    DRAKE_THROW_UNLESS(damping >= 0);
+    this->SetDampingVector(context, Vector1<T>(damping));
+  }
+
   /// @}
 
   /// Gets the default translation. Wrapper for the more general
@@ -237,10 +260,12 @@ class PrismaticJoint final : public Joint<T> {
   /// Joint<T> override called through public NVI, Joint::AddInDamping().
   /// Therefore arguments were already checked to be valid.
   /// This method adds into `forces` a dissipative force according to the
-  /// viscous law `f = -d⋅v`, with d the damping coefficient (see damping()).
+  /// viscous law `f = -d⋅v`, with d the damping coefficient (see
+  /// default_damping()).
   void DoAddInDamping(const systems::Context<T>& context,
                       MultibodyForces<T>* forces) const override {
-    const T damping_force = -this->damping() * get_translation_rate(context);
+    const T damping_force =
+        -this->GetDamping(context) * get_translation_rate(context);
     AddInForce(context, damping_force, forces);
   }
 
@@ -288,7 +313,7 @@ class PrismaticJoint final : public Joint<T> {
         std::make_unique<internal::PrismaticMobilizer<T>>(
             this->frame_on_parent(), this->frame_on_child(), axis_);
     prismatic_mobilizer->set_default_position(this->default_positions());
-    blue_print->mobilizers_.push_back(std::move(prismatic_mobilizer));
+    blue_print->mobilizer = std::move(prismatic_mobilizer);
     return blue_print;
   }
 
@@ -310,20 +335,20 @@ class PrismaticJoint final : public Joint<T> {
   // The internal implementation of this joint could change in a future version.
   // However its public API should remain intact.
   const internal::PrismaticMobilizer<T>* get_mobilizer() const {
-    // This implementation should only have one mobilizer.
-    DRAKE_DEMAND(this->get_implementation().num_mobilizers() == 1);
+    // This implementation should always use a mobilizer.
+    DRAKE_DEMAND(this->get_implementation().has_mobilizer());
     const internal::PrismaticMobilizer<T>* mobilizer =
         dynamic_cast<const internal::PrismaticMobilizer<T>*>(
-            this->get_implementation().mobilizers_[0]);
+            this->get_implementation().mobilizer);
     DRAKE_DEMAND(mobilizer != nullptr);
     return mobilizer;
   }
 
   internal::PrismaticMobilizer<T>* get_mutable_mobilizer() {
-    // This implementation should only have one mobilizer.
-    DRAKE_DEMAND(this->get_implementation().num_mobilizers() == 1);
+    // This implementation should always use a mobilizer.
+    DRAKE_DEMAND(this->get_implementation().has_mobilizer());
     auto* mobilizer = dynamic_cast<internal::PrismaticMobilizer<T>*>(
-        this->get_implementation().mobilizers_[0]);
+        this->get_implementation().mobilizer);
     DRAKE_DEMAND(mobilizer != nullptr);
     return mobilizer;
   }

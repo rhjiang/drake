@@ -1,13 +1,14 @@
 #pragma once
 
-#include <functional>
 #include <memory>
 #include <string>
+#include <variant>
 
-#include "drake/common/drake_assert.h"
 #include "drake/common/drake_copyable.h"
+#include "drake/common/drake_deprecated.h"
 #include "drake/common/eigen_types.h"
 #include "drake/common/fmt_ostream.h"
+#include "drake/geometry/proximity/polygon_surface_mesh.h"
 #include "drake/math/rigid_transform.h"
 
 /** @file
@@ -19,39 +20,44 @@
 namespace drake {
 namespace geometry {
 
+#ifndef DRAKE_DOXYGEN_CXX
+class Box;
+class Capsule;
+class Convex;
+class Cylinder;
+class Ellipsoid;
+class HalfSpace;
+class Mesh;
+class MeshcatCone;
 class ShapeReifier;
+class Sphere;
+#endif
 
-/** Simple struct for instantiating the type-specific Shape functionality.
- A class derived from the Shape class will invoke the parent's constructor as
- Shape(ShapeTag<DerivedShape>()). */
-template <typename ShapeType>
-struct ShapeTag{};
+// Implementation note for Drake developers:
+//
+// When you add a new subclass of Shape to Drake, you must:
+//
+// 1. Adjust the VariantShapeConstPtr typedef to list the new subclass.
+//
+// 2. Add a virtual function ImplementGeometry() for the new shape in
+//    ShapeReifier that invokes the ThrowUnsupportedGeometry method, and add to
+//    the test for it in shape_specification_test.cc.
+//
+// 3. Grep Drake for the line `using ShapeReifier::ImplementGeometry;` (a trick
+//    that selects a default-throw implementation) and choose which (if any) of
+//    those reifiers you want to add support for this new shape into.
 
-/** The base interface for all shape specifications. It has no public
-  constructor and cannot be instantiated directly. The Shape class has two
-  key properties:
+/** The abstract base class for all shape specifications. Concrete subclasses
+  exist for specific shapes (e.g., Box, Mesh, etc.).
+
+  The Shape class has two key properties:
 
    - it is cloneable, and
    - it can be "reified" (see ShapeReifier).
 
-  When you add a new subclass of Shape to Drake, you must:
-
-  1. add a virtual function ImplementGeometry() for the new shape in
-     ShapeReifier that invokes the ThrowUnsupportedGeometry method, and add to
-     the test for it in shape_specification_test.cc.
-  2. implement ImplementGeometry in derived ShapeReifiers to continue support
-     if desired, otherwise ensure unimplemented functions are not hidden in new
-     derivations of ShapeReifier with `using`, for example, `using
-     ShapeReifier::ImplementGeometry`. Existing subclasses should already have
-     this.
-
-  Otherwise, you might get a runtime error. We do not have an automatic way to
-  enforce them at compile time.
-
  Note that the Shape class hierarchy is closed to third-party extensions. All
  Shape classes must be defined within Drake directly (and in this h/cc file
- pair in particular).
- */
+ pair in particular). */
 class Shape {
  public:
   virtual ~Shape();
@@ -64,42 +70,80 @@ class Shape {
   /** Creates a unique copy of this shape. */
   std::unique_ptr<Shape> Clone() const;
 
+  /** Returns the (unqualified) type name of this Shape, e.g., "Box". */
+  std::string_view type_name() const { return do_type_name(); }
+
+  /** Returns a string representation of this shape. */
+  std::string to_string() const { return do_to_string(); }
+
+  /** Calls the given `visitor` function with `*this` as the sole argument, but
+  with `*this` downcast to be the shape's concrete subclass. For example, if
+  this shape is a %Box then calls `visitor(static_cast<const Box&>(*this))`.
+  @tparam ReturnType The return type to coerce return values into. When not
+  `void`, anything returned by the visitor must be implicitly convertible to
+  this type. When `void`, the return type will be whatever the Vistor's call
+  operator returns by default.
+
+  To see examples of how this is used, you can check the Drake source code,
+  e.g., check the implementation of CalcVolume() for one example. */
+  template <typename ReturnType = void, typename Visitor>
+  decltype(auto) Visit(Visitor&& visitor) const {
+    if constexpr (std::is_same_v<ReturnType, void>) {
+      return std::visit(
+          [&visitor](auto* shape) {
+            return visitor(*shape);
+          },
+          get_variant_this());
+    } else {
+      return std::visit(
+          [&visitor](auto* shape) -> ReturnType {
+            return visitor(*shape);
+          },
+          get_variant_this());
+    }
+  }
+
  protected:
-  // This is *not* in the public section. However, this allows the children to
-  // also use this macro, but precludes the possibility of external users
-  // slicing Shapes.
-  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(Shape)
+  /** (Internal use only) Constructor for use by derived classes.
+  All subclasses of Shape must be marked `final`. */
+  Shape();
 
-  /** Constructor available for derived class construction. A derived class
-   should invoke this in its initialization list, passing a ShapeTag
-   instantiated on its derived type, e.g.:
+  // This is DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN, marked "internal use only".
+  /** (Internal use only) For derived classes. */
+  Shape(const Shape&) = default;
+  /** (Internal use only) For derived classes. */
+  Shape& operator=(const Shape&) = default;
+  /** (Internal use only) For derived classes. */
+  Shape(Shape&&) = default;
+  /** (Internal use only) For derived classes. */
+  Shape& operator=(Shape&&) = default;
 
-   ```
-   class MyShape final : public Shape {
-    public:
-     MyShape() : Shape(ShapeTag<MyShape>()) {}
-     ...
-   };
-   ```
+  /** (Internal use only) NVI for Reify(). */
+  virtual void DoReify(ShapeReifier*, void*) const = 0;
 
-   The base class provides infrastructure for cloning and reification. To work
-   and to maintain sanity, we place the following requirements on derived
-   classes:
+  /** (Internal use only) NVI for Clone(). */
+  virtual std::unique_ptr<Shape> DoClone() const = 0;
 
-   1. they must have a public copy constructor,
-   2. they must be marked as final, and
-   3. their constructors must invoke the parent constructor with a ShapeTag
-      instance (as noted above), and
-   4. The ShapeReifier class must be extended to include an invocation of
-      ShapeReifier::ImplementGeometry() on the derived Shape class.
+  /** (Internal use only) NVI for type_name(). */
+  virtual std::string_view do_type_name() const = 0;
 
-   @tparam S    The derived shape class. It must derive from Shape. */
-  template <typename S>
-  explicit Shape(ShapeTag<S> tag);
+  /** (Internal use only) NVI for to_string(). */
+  virtual std::string do_to_string() const = 0;
 
- private:
-  std::function<std::unique_ptr<Shape>(const Shape&)> cloner_;
-  std::function<void(const Shape&, ShapeReifier*, void*)> reifier_;
+  /** (Internal use only) All concrete subclasses, as const pointers. */
+  using VariantShapeConstPtr = std::variant<  //
+      const Box*,                             //
+      const Capsule*,                         //
+      const Convex*,                          //
+      const Cylinder*,                        //
+      const Ellipsoid*,                       //
+      const HalfSpace*,                       //
+      const Mesh*,                            //
+      const MeshcatCone*,                     //
+      const Sphere*>;
+
+  /** (Internal use only) NVI-like helper function for Visit(). */
+  virtual VariantShapeConstPtr get_variant_this() const = 0;
 };
 
 /** Definition of a box. The box is centered on the origin of its canonical
@@ -121,6 +165,8 @@ class Box final : public Shape {
    @throws std::exception if the measures are not strictly positive. */
   explicit Box(const Vector3<double>& measures);
 
+  ~Box() final;
+
   /** Constructs a cube with the given `edge_size` for its width, depth, and
    height. */
   static Box MakeCube(double edge_size);
@@ -138,6 +184,12 @@ class Box final : public Shape {
   const Vector3<double>& size() const { return size_; }
 
  private:
+  void DoReify(ShapeReifier*, void*) const final;
+  std::unique_ptr<Shape> DoClone() const final;
+  std::string_view do_type_name() const final;
+  std::string do_to_string() const final;
+  VariantShapeConstPtr get_variant_this() const final;
+
   Vector3<double> size_;
 };
 
@@ -161,15 +213,32 @@ class Capsule final : public Shape {
    @throws std::exception if the measures are not strictly positive. */
   explicit Capsule(const Vector2<double>& measures);
 
+  ~Capsule() final;
+
   double radius() const { return radius_; }
   double length() const { return length_; }
 
  private:
+  void DoReify(ShapeReifier*, void*) const final;
+  std::unique_ptr<Shape> DoClone() const final;
+  std::string_view do_type_name() const final;
+  std::string do_to_string() const final;
+  VariantShapeConstPtr get_variant_this() const final;
+
   double radius_{};
   double length_{};
 };
 
 /** Definition of a *convex* surface mesh.
+
+ This shape is *not* the mesh contained in the file named by `filename`. It is
+ the convex hull of that mesh. As such, the only contents of the mesh file that
+ matter are the vertex positions. All other data is ignored. This includes
+ materials, textures, normals etc. This is true for *all* roles. Its appearance
+ in an illustration or perception role, will be a faceted polytope whose color
+ is defined by its assigned properties (or by the geometry consumer's defaults).
+
+ Because Drake computes the convex hull, the named mesh file need not be convex.
 
  The mesh is defined in a canonical frame C, implicit in the file parsed. Upon
  loading it in SceneGraph it can be scaled around the origin of C by a given
@@ -181,18 +250,12 @@ class Convex final : public Shape {
   /** Constructs a convex shape specification from the file located at the
    given file path. Optionally uniformly scaled by the given scale factor.
 
-   * We only support an .obj file with only one polyhedron.
-   * We assume that the polyhedron is convex.
+   The mesh file referenced can be an .obj, .gltf, or a tetrahedral .vtk.
 
    @param filename     The file name; if it is not absolute, it will be
                        interpreted relative to the current working directory.
    @param scale        An optional scale to coordinates.
 
-   @throws std::exception       if the .obj file doesn't define a single object.
-                                This can happen if it is empty, if there are
-                                multiple object-name statements (e.g.,
-                                "o object_name"), or if there are faces defined
-                                outside a single object-name statement.
    @throws std::exception       if |scale| < 1e-8. Note that a negative scale is
                                 considered valid. We want to preclude scales
                                 near zero but recognise that scale is a
@@ -201,12 +264,39 @@ class Convex final : public Shape {
                                 considering revisiting the model itself. */
   explicit Convex(const std::string& filename, double scale = 1.0);
 
+  ~Convex() final;
+
   const std::string& filename() const { return filename_; }
+  /** Returns the extension of the mesh filename -- all lower case and including
+   the dot. In other words /foo/bar/mesh.obj and /foo/bar/mesh.OBJ would both
+   report the ".obj" extension. The "extension" portion of the filename is
+   defined as in std::filesystem::path::extension(). */
+  const std::string& extension() const { return extension_; }
   double scale() const { return scale_; }
 
+  /** Reports the convex hull of the named mesh.
+
+   Note: the convex hull is computed on demand on the first invocation. All
+   subsequent invocations should have an O(1) cost.
+
+   @throws if the referenced mesh data cannot be read or is degenerate
+           (insufficient number of vertices, co-linear or coincident vertices,
+           etc.) All of the vertices lying on a plane is *not* considered
+           degenerate. */
+  const PolygonSurfaceMesh<double>& convex_hull() const;
+
  private:
+  void DoReify(ShapeReifier*, void*) const final;
+  std::unique_ptr<Shape> DoClone() const final;
+  std::string_view do_type_name() const final;
+  std::string do_to_string() const final;
+  VariantShapeConstPtr get_variant_this() const final;
+
   std::string filename_;
+  std::string extension_;
   double scale_{};
+  // Allows the deferred computation of the hull on an otherwise const Convex.
+  mutable std::shared_ptr<PolygonSurfaceMesh<double>> hull_{nullptr};
 };
 
 /** Definition of a cylinder. It is centered in its canonical frame with the
@@ -224,10 +314,18 @@ class Cylinder final : public Shape {
    @throws std::exception if the measures are not strictly positive. */
   explicit Cylinder(const Vector2<double>& measures);
 
+  ~Cylinder() final;
+
   double radius() const { return radius_; }
   double length() const { return length_; }
 
  private:
+  void DoReify(ShapeReifier*, void*) const final;
+  std::unique_ptr<Shape> DoClone() const final;
+  std::string_view do_type_name() const final;
+  std::string do_to_string() const final;
+  VariantShapeConstPtr get_variant_this() const final;
+
   double radius_{};
   double length_{};
 };
@@ -258,11 +356,19 @@ class Ellipsoid final : public Shape {
    @throws std::exception if the measures are not strictly positive. */
   explicit Ellipsoid(const Vector3<double>& measures);
 
+  ~Ellipsoid() final;
+
   double a() const { return radii_(0); }
   double b() const { return radii_(1); }
   double c() const { return radii_(2); }
 
  private:
+  void DoReify(ShapeReifier*, void*) const final;
+  std::unique_ptr<Shape> DoClone() const final;
+  std::string_view do_type_name() const final;
+  std::string do_to_string() const final;
+  VariantShapeConstPtr get_variant_this() const final;
+
   Vector3<double> radii_;
 };
 
@@ -277,6 +383,8 @@ class HalfSpace final : public Shape {
   DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(HalfSpace)
 
   HalfSpace();
+
+  ~HalfSpace() final;
 
   /** Creates the pose of a canonical half space in frame F.
    The half space's normal is aligned to the positive z-axis of its canonical
@@ -294,14 +402,39 @@ class HalfSpace final : public Shape {
                           ‖normal_F‖₂ < ε). */
   static math::RigidTransform<double> MakePose(const Vector3<double>& Hz_dir_F,
                                                const Vector3<double>& p_FB);
+
+ private:
+  void DoReify(ShapeReifier*, void*) const final;
+  std::unique_ptr<Shape> DoClone() const final;
+  std::string_view do_type_name() const final;
+  std::string do_to_string() const final;
+  VariantShapeConstPtr get_variant_this() const final;
 };
 
 // TODO(DamrongGuoy): Update documentation when mesh is fully supported (i.e.,
 // doesn't require equivocation here).
-/** Definition of a general (possibly non-convex) triangular surface mesh.
- Meshes can be used for illustration and perception roles, but have limited
- proximity support. See the documentation of QueryObject's proximity queries to
- see how meshes are used in each type of proximity query.
+/** Definition of a general (possibly non-convex) mesh.
+
+ The mesh may be a triangular surface mesh or a tetrahedral volume mesh,
+ depending on how it used.
+
+ Meshes can be used with all three roles but, currently, the support for the
+ proximity role is limited. Where a general mesh is not supported, the mesh is
+ replaced by its convex hull. See the documentation of QueryObject's proximity
+ queries for more details. The notable cases where the actual mesh topology is
+ used includes:
+
+   - Specifying the %Mesh as rigid hydroelastic.
+   - Specifying the %Mesh as compliant hydroelastic (when it references a
+     tetrahedral .vtk file).
+   - Specifying the %Mesh as deformable (when it references a tetrahedral .vtk
+     file).
+
+ This convex-hull substitution is a regrettable stop-gap solution until we fully
+ support general, non-convex meshes throughout proximity queries.
+
+ For visual roles (illustration and perception), the specified mesh file is
+ used as directly as possible.
 
  The mesh is defined in a canonical frame C, implicit in the file parsed. Upon
  loading it in SceneGraph it can be scaled around the origin of C by a given
@@ -310,23 +443,59 @@ class Mesh final : public Shape {
  public:
   DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(Mesh)
 
-  /** Constructs a mesh specification from the mesh file located at the given
-   file path; if the path is not absolute, it will be interpreted relative to
-   the current working directory.
-   Optionally uniformly scaled by the given scale factor.
-   @throws std::exception if |scale| < 1e-8. Note that a negative scale is
-   considered valid. We want to preclude scales near zero but recognise that
-   scale is a convenience tool for "tweaking" models. 8 orders of magnitude
-   should be plenty without considering revisiting the model itself. */
+  /** Constructs a mesh shape specification from the mesh file located at the
+   given file path. Optionally uniformly scaled by the given scale factor.
+
+   The mesh file referenced can be an .obj, a volume mesh in a .vtk, or a .gltf
+   file. However, not all file formats are appropriate for all roles. (E.g.,
+   a tetrahedral .vtk file should not be assigned a perception role.)
+
+   @param filename     The file name; if it is not absolute, it will be
+                       interpreted relative to the current working directory.
+   @param scale        An optional scale to coordinates.
+
+   @throws std::exception       if |scale| < 1e-8. Note that a negative scale is
+                                considered valid. We want to preclude scales
+                                near zero but recognise that scale is a
+                                convenience tool for "tweaking" models. 8 orders
+                                of magnitude should be plenty without
+                                considering revisiting the model itself. */
   explicit Mesh(const std::string& filename, double scale = 1.0);
 
+  ~Mesh() final;
+
   const std::string& filename() const { return filename_; }
+  /** Returns the extension of the mesh filename -- all lower case and including
+   the dot. In other words /foo/bar/mesh.obj and /foo/bar/mesh.OBJ would both
+   report the ".obj" extension. The "extension" portion of the filename is
+   defined as in std::filesystem::path::extension(). */
+  const std::string& extension() const { return extension_; }
   double scale() const { return scale_; }
 
+  /** Reports the convex hull of the named mesh.
+
+   Note: the convex hull is computed on demand on the first invocation. All
+   subsequent invocations should have an O(1) cost.
+
+   @throws if the referenced mesh data cannot be read or is degenerate
+           (insufficient number of vertices, co-linear or coincident vertices,
+           etc.) All of the vertices lying on a plane is *not* considered
+           degenerate. */
+  const PolygonSurfaceMesh<double>& convex_hull() const;
+
  private:
+  void DoReify(ShapeReifier*, void*) const final;
+  std::unique_ptr<Shape> DoClone() const final;
+  std::string_view do_type_name() const final;
+  std::string do_to_string() const final;
+  VariantShapeConstPtr get_variant_this() const final;
+
   // NOTE: Cannot be const to support default copy/move semantics.
   std::string filename_;
+  std::string extension_;
   double scale_{};
+  // Allows the deferred computation of the hull on an otherwise const Mesh.
+  mutable std::shared_ptr<PolygonSurfaceMesh<double>> hull_{nullptr};
 };
 
 // TODO(russt): Rename this to `Cone` if/when it is supported by more of the
@@ -357,11 +526,19 @@ class MeshcatCone final : public Shape {
    @throws std::exception if the measures are not strictly positive. */
   explicit MeshcatCone(const Vector3<double>& measures);
 
+  ~MeshcatCone() final;
+
   double height() const { return height_; }
   double a() const { return a_; }
   double b() const { return b_; }
 
  private:
+  void DoReify(ShapeReifier*, void*) const final;
+  std::unique_ptr<Shape> DoClone() const final;
+  std::string_view do_type_name() const final;
+  std::string do_to_string() const final;
+  VariantShapeConstPtr get_variant_this() const final;
+
   double height_{};
   double a_{};
   double b_{};
@@ -378,9 +555,17 @@ class Sphere final : public Shape {
    considered valid. */
   explicit Sphere(double radius);
 
+  ~Sphere() final;
+
   double radius() const { return radius_; }
 
  private:
+  void DoReify(ShapeReifier*, void*) const final;
+  std::unique_ptr<Shape> DoClone() const final;
+  std::string_view do_type_name() const final;
+  std::string do_to_string() const final;
+  VariantShapeConstPtr get_variant_this() const final;
+
   double radius_{};
 };
 
@@ -463,11 +648,9 @@ class ShapeReifier {
   virtual void ThrowUnsupportedGeometry(const std::string& shape_name);
 };
 
-// TODO(SeanCurtis-TRI): Merge this into shape_to_string.h so that there's a
-//  single utility for getting a string from a shape.
-/** Class that reports the name of the type of shape being reified (e.g.,
- Sphere, Box, etc.)  */
-class ShapeName final : public ShapeReifier {
+class DRAKE_DEPRECATED("2024-06-01",
+                       "Use the Shape::type_name() member function instead")
+    ShapeName final : public ShapeReifier {
  public:
   ShapeName() = default;
 
@@ -477,33 +660,22 @@ class ShapeName final : public ShapeReifier {
 
   ~ShapeName() final;
 
-  /** @name  Implementation of ShapeReifier interface  */
-  //@{
-
-  using ShapeReifier::ImplementGeometry;
-
-  void ImplementGeometry(const Box&, void*) final;
-  void ImplementGeometry(const Capsule&, void*) final;
-  void ImplementGeometry(const Convex&, void*) final;
-  void ImplementGeometry(const Cylinder&, void*) final;
-  void ImplementGeometry(const Ellipsoid&, void*) final;
-  void ImplementGeometry(const HalfSpace&, void*) final;
-  void ImplementGeometry(const Mesh&, void*) final;
-  void ImplementGeometry(const MeshcatCone&, void*) final;
-  void ImplementGeometry(const Sphere&, void*) final;
-
-  //@}
-
   /** Returns the name of the last shape reified. Empty if no shape has been
    reified yet.  */
   std::string name() const { return string_; }
 
  private:
+  void DefaultImplementGeometry(const Shape& shape) final;
+
   std::string string_;
 };
 
-/** @relates ShapeName */
+#ifndef DRAKE_DOXYGEN_CXX
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 std::ostream& operator<<(std::ostream& out, const ShapeName& name);
+#pragma GCC diagnostic pop
+#endif
 
 /** Calculates the volume (in meters^3) for the Shape. For convex and mesh
  geometries, the algorithm only supports ".obj" files and only produces
@@ -518,9 +690,23 @@ double CalcVolume(const Shape& shape);
 }  // namespace geometry
 }  // namespace drake
 
-// TODO(jwnimmer-tri) Add a real formatter and deprecate the operator<<.
+#ifndef DRAKE_DOXYGEN_CXX
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 namespace fmt {
 template <>
-struct formatter<drake::geometry::ShapeName>
-    : drake::ostream_formatter {};
+struct formatter<drake::geometry::ShapeName> : drake::ostream_formatter {};
 }  // namespace fmt
+#pragma GCC diagnostic pop
+#endif
+
+DRAKE_FORMATTER_AS(, drake::geometry, Box, x, x.to_string())
+DRAKE_FORMATTER_AS(, drake::geometry, Capsule, x, x.to_string())
+DRAKE_FORMATTER_AS(, drake::geometry, Convex, x, x.to_string())
+DRAKE_FORMATTER_AS(, drake::geometry, Cylinder, x, x.to_string())
+DRAKE_FORMATTER_AS(, drake::geometry, Ellipsoid, x, x.to_string())
+DRAKE_FORMATTER_AS(, drake::geometry, HalfSpace, x, x.to_string())
+DRAKE_FORMATTER_AS(, drake::geometry, Mesh, x, x.to_string())
+DRAKE_FORMATTER_AS(, drake::geometry, MeshcatCone, x, x.to_string())
+DRAKE_FORMATTER_AS(, drake::geometry, Shape, x, x.to_string())
+DRAKE_FORMATTER_AS(, drake::geometry, Sphere, x, x.to_string())

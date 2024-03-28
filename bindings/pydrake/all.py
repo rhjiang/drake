@@ -32,8 +32,6 @@ collisions, please run ``bazel run //bindings/pydrake:print_symbol_collision``
 from the Drake source tree.
 """
 
-import inspect as __inspect
-
 # Normal symbols.
 from . import getDrakePath
 from .autodiffutils import *
@@ -51,7 +49,8 @@ from .trajectories import *
 # Submodules.
 from .common.all import *
 from .geometry.all import *
-# - `examples` does not offer public Drake library symbols.
+# - `.gym` is an optional dependency, so is excluded from `all`.
+# - `.examples` does not offer public Drake library symbols.
 from .multibody.all import *
 from .systems.all import *
 from .visualization import *
@@ -64,3 +63,7 @@ from .visualization import *
 from .math import *
 # - Ensure symbolic.Polynomial wins (#18353).
 from .symbolic import Polynomial
+
+# Ensure that the command-line modules appear in the pydrake API reference.
+import pydrake.visualization.meldis
+import pydrake.visualization.model_visualizer

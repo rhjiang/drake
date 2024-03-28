@@ -1,4 +1,4 @@
-load("@drake//tools/skylark:drake_py.bzl", "py_test_isolated")
+load("//tools/skylark:drake_py.bzl", "py_test_isolated")
 
 def install_lint(
         existing_rules = None):
@@ -52,7 +52,7 @@ def install_lint(
         py_test_isolated(
             name = "install_lint",
             size = "small",
-            srcs = ["@drake//tools/lint:install_lint_reporter.py"],
+            srcs = ["@drake//tools/lint:install_lint_reporter"],
             main = "@drake//tools/lint:install_lint_reporter.py",
             args = args,
             data = data,

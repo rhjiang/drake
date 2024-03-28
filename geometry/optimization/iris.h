@@ -1,9 +1,13 @@
 #pragma once
 
+#include <map>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
+#include "drake/common/name_value.h"
+#include "drake/geometry/meshcat.h"
 #include "drake/geometry/optimization/convex_set.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/multibody/plant/multibody_plant.h"
@@ -17,7 +21,21 @@ namespace optimization {
 @ingroup geometry_optimization
 */
 struct IrisOptions {
-  IrisOptions() = default;
+  /** Passes this object to an Archive.
+  Refer to @ref yaml_serialization "YAML Serialization" for background.
+  Note: This only serializes options that are YAML built-in types. */
+  template <typename Archive>
+  void Serialize(Archive* a) {
+    a->Visit(DRAKE_NVP(require_sample_point_is_contained));
+    a->Visit(DRAKE_NVP(iteration_limit));
+    a->Visit(DRAKE_NVP(termination_threshold));
+    a->Visit(DRAKE_NVP(relative_termination_threshold));
+    a->Visit(DRAKE_NVP(configuration_space_margin));
+    a->Visit(DRAKE_NVP(num_collision_infeasible_samples));
+    a->Visit(DRAKE_NVP(num_additional_constraint_infeasible_samples));
+    a->Visit(DRAKE_NVP(random_seed));
+    a->Visit(DRAKE_NVP(mixing_steps));
+  }
 
   /** The initial polytope is guaranteed to contain the point if that point is
   collision-free. However, the IRIS alternation objectives do not include (and
@@ -62,10 +80,18 @@ struct IrisOptions {
   pass in such configuration space obstacles. */
   ConvexSets configuration_obstacles{};
 
-  /** The initial hyperepllipsoid that IRIS will use for calculating hyperplanes
+  /** The initial hyperellipsoid that IRIS will use for calculating hyperplanes
   in the first iteration. If no hyperellipsoid is provided, a small hypershpere
   centered at the given sample will be used. */
   std::optional<Hyperellipsoid> starting_ellipse{};
+
+  /** Optionally allows the caller to restrict the space within which IRIS
+  regions are allowed to grow. By default, IRIS regions are bounded by the
+  `domain` argument in the case of `Iris` or the joint limits of the input
+  `plant` in the case of `IrisInConfigurationSpace`. If this option is
+  specified, IRIS regions will be confined to the intersection between the
+  domain and `bounding_region` */
+  std::optional<HPolyhedron> bounding_region{};
 
   /** By default, IRIS in configuration space certifies regions for collision
   avoidance constraints and joint limits. This option can be used to pass
@@ -97,6 +123,41 @@ struct IrisOptions {
   counter-examples for the additional constraints using in
   IrisInConfigurationSpace. Use this option to set the initial seed. */
   int random_seed{1234};
+
+  /** Passing a meshcat instance may enable debugging visualizations; this
+  currently only happens in IrisInConfigurationSpace and when the
+  configuration space is <= 3 dimensional.*/
+  std::shared_ptr<Meshcat> meshcat{};
+
+  /** A user-defined termination function to
+  determine whether the iterations should stop. This function is called after
+  computing each hyperplane at every IRIS iteration. If the function returns
+  true, then the computations will stop and the last step region will be
+  returned. Therefore, it is highly recommended that the termination function
+  possesses a monotonic property such that for any two HPolyhedrons A and B such
+  that B ⊆ A, we have if termination(A) -> termination(B). For example, a valid
+  termination function is to check whether if the region does not contain any of
+  a set of desired points.
+  ```
+  auto termination_func = [](const HPolyhedron& set) {
+    for (const VectorXd& point : desired_points) {
+      if (!set.PointInSet(point)) {
+        return true;
+      }
+    }
+    return false;
+  };
+  ```
+  The algorithm will stop when as soon as the region leaves one
+  of the desired points, in a similar way to how @p
+  require_sample_point_is_contained is enforced.
+  */
+  std::function<bool(const HPolyhedron&)> termination_func{};
+
+  /* The `mixing_steps` parameters is passed to HPolyhedron::UniformSample to
+  control the total number of hit-and-run steps taken for each new random
+  sample. */
+  int mixing_steps{10};
 };
 
 /** The IRIS (Iterative Region Inflation by Semidefinite programming) algorithm,
@@ -160,6 +221,10 @@ probabilistically "certified" by restarting the nonlinear optimization from
 random initial seeds inside the candidate IRIS region until it fails to find a
 collision in `options.num_collision_infeasible_samples` consecutive attempts.
 
+This method constructs a single Iris region in the configuration space of
+@p plant. @see planning::IrisInConfigurationSpaceFromCliqueCover for a method to
+automatically cover the configuration space with multiple Iris regions.
+
 @param plant describes the kinematics of configuration space.  It must be
 connected to a SceneGraph in a systems::Diagram.
 @param context is a context of the @p plant. The context must have the
@@ -171,12 +236,35 @@ run-time of the algorithm. The same goes for
 `options.num_additional_constraints_infeasible_samples`.
 
 @throws std::exception if the sample configuration in @p context is infeasible.
+@throws std::exception if termination_func is invalid on the domain. See
+IrisOptions.termination_func for more details.
 @ingroup geometry_optimization
 */
 HPolyhedron IrisInConfigurationSpace(
     const multibody::MultibodyPlant<double>& plant,
     const systems::Context<double>& context,
     const IrisOptions& options = IrisOptions());
+
+/** Modifies the @p iris_options to facilitate finding a region that contains
+the edge between x_1 and x_2. It sets @p iris_options.starting_ellipse to be a
+hyperellipsoid that contains the edge, is centered at the midpoint of the
+edge and extends in other directions by epsilon. It also sets @p
+iris_options.termination_func such that IRIS iterations terminate when the edge
+is no longer contained in the IRIS region with tolerance tol.
+
+@throws std::exception if x_1.size() != x_2.size().
+@throws std::exception if epsilon <= 0. This is due to the fact that the
+hyperellipsoid for @p iris_options.starting_ellipse must have non-zero volume.
+@ingroup geometry_optimization
+*/
+void SetEdgeContainmentTerminationCondition(
+    IrisOptions* iris_options, const Eigen::Ref<const Eigen::VectorXd>& x_1,
+    const Eigen::Ref<const Eigen::VectorXd>& x_2, const double epsilon = 1e-3,
+    const double tol = 1e-6);
+
+/** Defines a standardized representation for (named) IrisRegions, which can be
+serialized in both C++ and Python. */
+typedef std::map<std::string, HPolyhedron> IrisRegions;
 
 }  // namespace optimization
 }  // namespace geometry

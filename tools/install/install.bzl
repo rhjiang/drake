@@ -1,13 +1,14 @@
 load("//tools/skylark:py.bzl", "py_binary")
-load("@drake//tools/skylark:drake_java.bzl", "MainClassInfo")
-load("@drake//tools/skylark:drake_py.bzl", "drake_py_test")
+load("//tools/skylark:drake_java.bzl", "MainClassInfo")
+load("//tools/skylark:drake_py.bzl", "drake_py_test")
 load(
-    "@drake//tools/skylark:pathutils.bzl",
+    "//tools/skylark:pathutils.bzl",
     "dirname",
     "join_paths",
     "output_path",
 )
 load("@python//:version.bzl", "PYTHON_SITE_PACKAGES_RELPATH", "PYTHON_VERSION")
+load("@rules_license//rules:providers.bzl", "LicenseInfo")
 
 InstallInfo = provider()
 
@@ -46,7 +47,7 @@ def _depset_to_list(x):
     return iter_list
 
 #------------------------------------------------------------------------------
-def _output_path(ctx, input_file, strip_prefix = [], warn_foreign = True):
+def _output_path(ctx, input_file, strip_prefix = [], ignore_errors = False):
     """Compute output path (without destination prefix) for install action.
 
     This computes the adjusted output path for an input file. It is the same as
@@ -69,11 +70,10 @@ def _output_path(ctx, input_file, strip_prefix = [], warn_foreign = True):
             if path != None:
                 return path
 
-    # If we get here, we were not able to resolve the path; give up, and print
-    # a warning about installing the "foreign" file.
-    if warn_foreign:
-        print("%s installing file %s which is not in current package" %
-              (ctx.label, input_file.path))
+    # If we get here, we were not able to resolve the path; give up.
+    if not ignore_errors:
+        fail("%s installing file %s which is not in current package" %
+             (ctx.label, input_file.path))
     return input_file.basename
 
 #------------------------------------------------------------------------------
@@ -106,8 +106,7 @@ def _install_action(
         artifact,
         dests,
         strip_prefixes = [],
-        rename = {},
-        warn_foreign = True):
+        rename = {}):
     """Compute install action for a single file.
 
     This takes a single file artifact and returns the appropriate install
@@ -137,7 +136,7 @@ def _install_action(
 
     file_dest = join_paths(
         dest,
-        _output_path(ctx, artifact, strip_prefix, warn_foreign),
+        _output_path(ctx, artifact, strip_prefix),
     )
     file_dest = _rename(file_dest, rename)
 
@@ -150,8 +149,7 @@ def _install_actions(
         dests,
         strip_prefixes = [],
         excluded_files = [],
-        rename = {},
-        warn_foreign = True):
+        rename = {}):
     """Compute install actions for files.
 
     This takes a list of labels (targets or files) and computes the install
@@ -187,7 +185,7 @@ def _install_actions(
             # original relative path and the path with prefix(es) stripped,
             # then use the original relative path for both exclusions and
             # renaming.
-            if _output_path(ctx, a, warn_foreign = False) in excluded_files:
+            if _output_path(ctx, a, ignore_errors = True) in excluded_files:
                 continue
 
             actions.append(
@@ -197,7 +195,6 @@ def _install_actions(
                     dests,
                     strip_prefixes,
                     rename,
-                    warn_foreign,
                 ),
             )
 
@@ -279,7 +276,7 @@ def _install_java_actions(ctx, target):
             _output_path(
                 ctx,
                 target.files_to_run.executable,
-                warn_foreign = False,
+                ignore_errors = True,
             ),
         ]
     return _install_actions(
@@ -336,7 +333,6 @@ def _install_java_launcher_actions(
             java_dest,
             java_strip_prefix,
             rename,
-            warn_foreign = False,
         )
         classpath.append(join_paths("$prefix", jar_install.dst))
 
@@ -395,6 +391,41 @@ def _java_launcher_code(action):
 #END internal helpers
 #==============================================================================
 #BEGIN rules
+
+def install_license(*, doc_dest, licenses, tags = None, **kwargs):
+    """Installs the license file texts for the `licenses` that have been
+    declared using rules_license.
+    """
+    _install_license_rule(
+        doc_dest = doc_dest,
+        licenses = licenses,
+        tags = (tags or []) + ["install"],
+        **kwargs
+    )
+
+def _install_license_impl(ctx):
+    install_actions = []
+    for license in ctx.attr.licenses:
+        file = license[LicenseInfo].license_text
+        install_actions.append(struct(
+            src = file,
+            dst = ctx.attr.doc_dest + "/" + file.basename,
+        ))
+    return [
+        InstallInfo(
+            install_actions = install_actions,
+            rename = {},
+            installed_files = {},
+        ),
+    ]
+
+_install_license_rule = rule(
+    implementation = _install_license_impl,
+    attrs = {
+        "doc_dest": attr.string(mandatory = True),
+        "licenses": attr.label_list(providers = [LicenseInfo]),
+    },
+)
 
 #------------------------------------------------------------------------------
 # Generate information to install "stuff". "Stuff" can be library or binary
@@ -843,6 +874,8 @@ def install_test(
             "//tools/install:install_test_helper",
             "//tools/install:otool",
         ],
+        # Several install tests need some network access.
+        allow_network = ["meshcat", "package_map"],
         # The commands in our "list of commands" use unittest themselves, so we
         # do the same for our own test rig.  That means that both our rig and
         # the "list of commands" python programs must have a __main__ clause

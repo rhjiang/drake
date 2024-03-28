@@ -173,9 +173,8 @@ GTEST_TEST(KinematicsVector, FramePoseVectorSymbolicInstantiation) {
   const Expression x_{var_x_};
   const Expression y_{var_y_};
   const Expression z_{var_z_};
-
   const RigidTransform<Expression> pose =
-      RigidTransform<Expression>(Translation3<Expression>(x_, y_, z_));
+      RigidTransform<Expression>(Eigen::Translation<Expression, 3>(x_, y_, z_));
   poses.set_value(ids[1], pose);
 
   EXPECT_TRUE(x_.EqualTo(poses.value(ids[1]).translation()[0]));
@@ -215,7 +214,7 @@ GTEST_TEST(KinematicsVector, FrameIdRange) {
   std::set<FrameId> actual_ids;
   for (FrameId id : poses.ids()) actual_ids.insert(id);
   EXPECT_EQ(ids.size(), actual_ids.size());
-  for (FrameId id : ids) EXPECT_EQ(actual_ids.count(id), 1);
+  for (FrameId id : ids) EXPECT_TRUE(actual_ids.contains(id));
 }
 
 }  // namespace test

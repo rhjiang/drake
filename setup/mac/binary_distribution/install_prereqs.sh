@@ -26,7 +26,7 @@ if [[ "${EUID}" -eq 0 ]]; then
 fi
 
 if command -v conda &>/dev/null; then
-  echo 'WARNING: Anaconda is NOT supported for building and using the Drake Python bindings' >&2
+  echo 'NOTE: Drake is not tested regularly with Anaconda, so you may experience compatibility hiccups; when asking for help, be sure to mention that Conda is involved.' >&2
 fi
 
 if ! command -v brew &>/dev/null; then
@@ -62,9 +62,9 @@ fi
 
 brew bundle --file="${BASH_SOURCE%/*}/Brewfile" --no-lock
 
-if ! command -v pip3.11 &>/dev/null; then
-  echo 'ERROR: pip3.11 is NOT installed. The post-install step for the python@3.11 formula may have failed.' >&2
+if ! command -v pip3.12 &>/dev/null; then
+  echo 'ERROR: pip3.12 is NOT installed. The post-install step for the python@3.12 formula may have failed.' >&2
   exit 2
 fi
 
-pip3.11 install -r "${BASH_SOURCE%/*}/requirements.txt"
+pip3.12 install --break-system-packages -r "${BASH_SOURCE%/*}/requirements.txt"

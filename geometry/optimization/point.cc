@@ -20,22 +20,28 @@ using solvers::VectorXDecisionVariable;
 using std::sqrt;
 using symbolic::Variable;
 
+Point::Point() : Point(VectorXd(0)) {}
+
 Point::Point(const Eigen::Ref<const VectorXd>& x)
-    : ConvexSet(x.size()), x_{x} {}
+    : ConvexSet(x.size(), true), x_(x) {}
 
 Point::Point(const QueryObject<double>& query_object, GeometryId geometry_id,
              std::optional<FrameId> reference_frame,
              double maximum_allowable_radius)
-    : ConvexSet(3) {
-  double radius = -1.0;
-  query_object.inspector().GetShape(geometry_id).Reify(this, &radius);
-  if (radius > maximum_allowable_radius) {
+    : ConvexSet(3, true) {
+  const Shape& shape = query_object.inspector().GetShape(geometry_id);
+  if (shape.type_name() != "Sphere") {
+    throw std::logic_error(fmt::format(
+        "Point(geometry_id={}, ...) cannot convert a {}, only a Sphere",
+        geometry_id, shape));
+  }
+  const Sphere& sphere = dynamic_cast<const Sphere&>(shape);
+  if (sphere.radius() > maximum_allowable_radius) {
     throw std::runtime_error(
         fmt::format("GeometryID {} has a radius {} is larger than the "
                     "specified maximum_allowable_radius: {}.",
-                    geometry_id, radius, maximum_allowable_radius));
+                    geometry_id, sphere.radius(), maximum_allowable_radius));
   }
-
   const RigidTransformd X_WE =
       reference_frame ? query_object.GetPoseInWorld(*reference_frame)
                       : RigidTransformd::Identity();
@@ -55,22 +61,38 @@ std::unique_ptr<ConvexSet> Point::DoClone() const {
   return std::make_unique<Point>(*this);
 }
 
+std::optional<bool> Point::DoIsBoundedShortcut() const {
+  return true;
+}
+
+bool Point::DoIsEmpty() const {
+  return false;
+}
+
+std::optional<VectorXd> Point::DoMaybeGetPoint() const {
+  return x_;
+}
+
 bool Point::DoPointInSet(const Eigen::Ref<const VectorXd>& x,
                          double tol) const {
   return is_approx_equal_abstol(x, x_, tol);
 }
 
-void Point::DoAddPointInSetConstraints(
+std::pair<VectorX<Variable>, std::vector<Binding<Constraint>>>
+Point::DoAddPointInSetConstraints(
     MathematicalProgram* prog,
     const Eigen::Ref<const VectorXDecisionVariable>& x) const {
-  prog->AddBoundingBoxConstraint(x_, x_, x);
+  VectorX<Variable> new_vars;
+  std::vector<Binding<Constraint>> new_constraints;
+  new_constraints.push_back(prog->AddBoundingBoxConstraint(x_, x_, x));
+  return {std::move(new_vars), std::move(new_constraints)};
 }
 
 std::vector<Binding<Constraint>>
 Point::DoAddPointInNonnegativeScalingConstraints(
     MathematicalProgram* prog,
     const Eigen::Ref<const VectorXDecisionVariable>& x,
-    const symbolic::Variable& t) const {
+    const Variable& t) const {
   std::vector<Binding<Constraint>> constraints;
   // x == t*x_.
   const int n = ambient_dimension();
@@ -105,11 +127,6 @@ std::pair<std::unique_ptr<Shape>, math::RigidTransformd>
 Point::DoToShapeWithPose() const {
   return std::make_pair(std::make_unique<Sphere>(0.0),
                         math::RigidTransformd(x_));
-}
-
-void Point::ImplementGeometry(const Sphere& sphere, void* data) {
-  double* radius = static_cast<double*>(data);
-  *radius = sphere.radius();
 }
 
 }  // namespace optimization

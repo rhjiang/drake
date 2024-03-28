@@ -1,4 +1,8 @@
-load("@drake//tools/workspace:github.bzl", "github_archive")
+load("//tools/workspace:github.bzl", "github_archive")
+load(
+    "//third_party:com_github_bazelbuild_rules_python/internal_config_repo.bzl",  # noqa
+    "internal_config_repo",
+)
 
 # Note that we do NOT install a LICENSE file as part of the Drake install
 # because this repository is required only when building and testing with
@@ -10,12 +14,11 @@ def rules_python_repository(
     github_archive(
         name = name,
         repository = "bazelbuild/rules_python",  # License: Apache-2.0,
-        upgrade_advice = """
-        The commit (version) and sha256 here should be identical to the
-        commit listed in
-        drake/tools/install/bazel/test/drake_bazel_installed_test.py.
-        """,
-        commit = "0.21.0",
-        sha256 = "94750828b18044533e98a129003b6a68001204038dc4749f40b195b24c38f49f",  # noqa
+        commit = "0.31.0",
+        sha256 = "c68bdc4fbec25de5b5493b8819cfc877c4ea299c0dcb15c244c5a00208cde311",  # noqa
+        patches = [
+            ":patches/internal_config_repo.patch",
+        ],
         mirrors = mirrors,
     )
+    internal_config_repo(name = name + "_internal")

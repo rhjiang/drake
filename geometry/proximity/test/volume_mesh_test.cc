@@ -9,6 +9,7 @@
 #include "drake/common/eigen_types.h"
 #include "drake/common/extract_double.h"
 #include "drake/common/test_utilities/eigen_matrix_compare.h"
+#include "drake/common/test_utilities/expect_throws_message.h"
 #include "drake/geometry/proximity/volume_mesh_field.h"
 #include "drake/math/autodiff.h"
 #include "drake/math/rigid_transform.h"
@@ -18,13 +19,14 @@ namespace geometry {
 
 // TODO(DamrongGuoy): Remove this helper class if we change
 //  CalcGradBarycentric() from private to public.
-template<typename T>
+template <typename T>
 class VolumeMeshTester {
  public:
   explicit VolumeMeshTester(const VolumeMesh<T>& mesh) : mesh_(mesh) {}
   Vector3<T> CalcGradBarycentric(int e, int i) const {
     return mesh_.CalcGradBarycentric(e, i);
   }
+
  private:
   const VolumeMesh<T>& mesh_;
 };
@@ -37,9 +39,10 @@ using math::RollPitchYaw;
 // Test instantiation of VolumeMesh of a geometry M and inspecting its
 // components. By default, the vertex positions are expressed in M's frame.
 // The optional parameter X_WM will change the vertex positions to W's frame.
-template<typename T>
+template <typename T>
 std::unique_ptr<VolumeMesh<T>> TestVolumeMesh(
-    const RigidTransform<T> X_WM = RigidTransform<T>::Identity()) {
+    const RigidTransform<T> X_WM = RigidTransform<T>::Identity(),
+    double scale = 1.0) {
   // A  trivial volume mesh comprises of two tetrahedral elements with
   // vertices on the coordinate axes and the origin like this:
   //
@@ -66,13 +69,15 @@ std::unique_ptr<VolumeMesh<T>> TestVolumeMesh(
                                      Vector3<T>::UnitY(), Vector3<T>::UnitZ(),
                                      -Vector3<T>::UnitZ()};
   std::vector<Vector3<T>> vertices_W;
-  for (int v = 0; v < 5; ++v) vertices_W.emplace_back(X_WM * vertex_data[v]);
+  for (int v = 0; v < 5; ++v) {
+    vertices_W.emplace_back(X_WM * vertex_data[v] * scale);
+  }
   auto volume_mesh_W = std::make_unique<VolumeMesh<T>>(std::move(elements),
                                                        std::move(vertices_W));
   EXPECT_EQ(2, volume_mesh_W->num_elements());
   EXPECT_EQ(5, volume_mesh_W->num_vertices());
   for (int v = 0; v < 5; ++v)
-    EXPECT_EQ(X_WM * vertex_data[v], volume_mesh_W->vertex(v));
+    EXPECT_EQ(X_WM * vertex_data[v] * scale, volume_mesh_W->vertex(v));
   for (int e = 0; e < 2; ++e)
     for (int v = 0; v < 4; ++v)
       EXPECT_EQ(element_data[e][v], volume_mesh_W->element(e).vertex(v));
@@ -85,6 +90,18 @@ GTEST_TEST(VolumeMeshTest, TestVolumeMeshDouble) {
   auto volume_mesh = TestVolumeMesh<double>();
 }
 
+GTEST_TEST(VolumeMeshTest, TestDegenerateVolumeMeshDouble) {
+  auto volume_mesh =
+      TestVolumeMesh<double>(RigidTransform<double>::Identity(), 1e-8);
+  std::array<double, 4> dummy_values{1, 2, 3, 4};
+  DRAKE_EXPECT_THROWS_MESSAGE(
+      volume_mesh->CalcGradientVectorOfLinearField(dummy_values, 0),
+      ".*not calculate gradient.*");
+  auto result =
+      volume_mesh->MaybeCalcGradientVectorOfLinearField(dummy_values, 0);
+  EXPECT_FALSE(result.has_value());
+}
+
 // Smoke tests using `AutoDiffXd` as the underlying scalar type. The purpose
 // of this test is simply to check that it compiles. There is no test of
 // differentiation.
@@ -92,7 +109,7 @@ GTEST_TEST(VolumeMeshTest, TestVolumeMeshAutoDiffXd) {
   auto volume_mesh = TestVolumeMesh<AutoDiffXd>();
 }
 
-template<typename T>
+template <typename T>
 void TestVolumeMeshEqual() {
   const auto mesh = TestVolumeMesh<T>();
 
@@ -116,13 +133,15 @@ void TestVolumeMeshEqual() {
   {
     std::vector<Vector3<T>> vertices_copy = mesh->vertices();
     std::vector<VolumeElement> tetrahedra = mesh->tetrahedra();
+    // clang-format off
     // Re-order vertices of the first tetrahedron.
     tetrahedra[0] = VolumeElement(tetrahedra[0].vertex(1),
                                   tetrahedra[0].vertex(2),
                                   tetrahedra[0].vertex(0),
                                   tetrahedra[0].vertex(3));
+    // clang-format on
     VolumeMesh<T> mesh_different_tetrahedra(std::move(tetrahedra),
-                                             std::move(vertices_copy));
+                                            std::move(vertices_copy));
     EXPECT_FALSE(mesh->Equal(mesh_different_tetrahedra));
   }
 
@@ -155,7 +174,7 @@ GTEST_TEST(VolumeMeshTest, TestEqualAutoDiffXd) {
   TestVolumeMeshEqual<AutoDiffXd>();
 }
 
-template<typename T>
+template <typename T>
 void TestCalcTetrahedronVolume() {
   const RigidTransform<T> X_WM(
       RollPitchYaw<T>(M_PI / 6.0, 2.0 * M_PI / 3.0, 7.0 * M_PI / 4.0),
@@ -194,13 +213,15 @@ void TestCalcVolume() {
   EXPECT_NEAR(expected_volume, volume, kTolerance);
 }
 
-GTEST_TEST(VolumeMeshTest, TestCalcVolumeDouble) { TestCalcVolume<double>(); }
+GTEST_TEST(VolumeMeshTest, TestCalcVolumeDouble) {
+  TestCalcVolume<double>();
+}
 
 GTEST_TEST(VolumeMeshTest, TestCalcVolumeAutoDiffXd) {
   TestCalcVolume<AutoDiffXd>();
 }
 
-template<typename T>
+template <typename T>
 void TestCalcBarycentric() {
   const RigidTransform<T> X_WM(
       RollPitchYaw<T>(M_PI / 6.0, 2.0 * M_PI / 3.0, 7.0 * M_PI / 4.0),
@@ -254,7 +275,7 @@ GTEST_TEST(VolumeMeshTest, TestCalcBarycentricAutoDiffXd) {
   TestCalcBarycentric<AutoDiffXd>();
 }
 
-template<typename T>
+template <typename T>
 void TestCalcGradBarycentric() {
   // The mesh M consists of one tetrahedral element whose vertices are at the
   // origin and on the coordinate axes of M's frame. The chosen vertex
@@ -333,7 +354,7 @@ GTEST_TEST(VolumeMeshTest, TestCalcGradBarycentricAutoDiffXd) {
   TestCalcGradBarycentric<AutoDiffXd>();
 }
 
-template<typename T>
+template <typename T>
 void TestCalcGradientVectorOfLinearField() {
   // CalcGradientVectorOfLinearField() is a weighted sum of
   // CalcGradBarycentric() which is already tested with non-symmetric vertex
@@ -405,7 +426,7 @@ GTEST_TEST(VolumeMeshTest, TestTransformVerticesAutoDiffXd) {
   TestTransformVertices<AutoDiffXd>();
 }
 
-template<typename T>
+template <typename T>
 std::unique_ptr<VolumeMeshFieldLinear<T, T>> TestVolumeMeshFieldLinear() {
   auto volume_mesh = TestVolumeMesh<T>();
 
@@ -569,8 +590,8 @@ TEST_F(ScalarMixingTest, CalcGradientVectorOfLinearField) {
     EXPECT_EQ(grad_W(0).derivatives().size(), 3);
     EXPECT_EQ(grad_W(1).derivatives().size(), 3);
     EXPECT_EQ(grad_W(2).derivatives().size(), 3);
-    EXPECT_TRUE(CompareMatrices(math::ExtractValue(grad_W),
-                                grad_W_expected, kEps));
+    EXPECT_TRUE(
+        CompareMatrices(math::ExtractValue(grad_W), grad_W_expected, kEps));
   }
 
   {
@@ -581,8 +602,8 @@ TEST_F(ScalarMixingTest, CalcGradientVectorOfLinearField) {
     EXPECT_EQ(grad_W1(0).derivatives().size(), 3);
     EXPECT_EQ(grad_W1(1).derivatives().size(), 3);
     EXPECT_EQ(grad_W1(2).derivatives().size(), 3);
-    EXPECT_TRUE(CompareMatrices(math::ExtractValue(grad_W1),
-                                grad_W_expected, kEps));
+    EXPECT_TRUE(
+        CompareMatrices(math::ExtractValue(grad_W1), grad_W_expected, kEps));
 
     // AutoDiffXd-valued mesh with double-valued field on triangle *without*
     // derivatives: AutodDiffXd-valued result *without* derivatives.
@@ -602,8 +623,8 @@ TEST_F(ScalarMixingTest, CalcGradientVectorOfLinearField) {
     EXPECT_EQ(grad_W(0).derivatives().size(), 3);
     EXPECT_EQ(grad_W(1).derivatives().size(), 3);
     EXPECT_EQ(grad_W(2).derivatives().size(), 3);
-    EXPECT_TRUE(CompareMatrices(math::ExtractValue(grad_W),
-                                grad_W_expected, kEps));
+    EXPECT_TRUE(
+        CompareMatrices(math::ExtractValue(grad_W), grad_W_expected, kEps));
   }
 }
 

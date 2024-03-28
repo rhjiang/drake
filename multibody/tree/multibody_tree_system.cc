@@ -11,6 +11,7 @@ namespace drake {
 using systems::BasicVector;
 using systems::Context;
 using systems::LeafSystem;
+using systems::Parameters;
 using systems::State;
 
 namespace multibody {
@@ -82,10 +83,60 @@ void MultibodyTreeSystem<T>::SetDefaultState(const Context<T>& context,
 }
 
 template <typename T>
+void MultibodyTreeSystem<T>::SetDefaultParameters(
+    const Context<T>& context, Parameters<T>* parameters) const {
+  LeafSystem<T>::SetDefaultParameters(context, parameters);
+
+  // Mobilizers.
+  for (MobilizerIndex mobilizer_index(0);
+       mobilizer_index < tree_->num_mobilizers(); ++mobilizer_index) {
+    internal_tree()
+        .get_mobilizer(mobilizer_index)
+        .SetDefaultParameters(parameters);
+  }
+  // Joints.
+  for (JointIndex joint_index(0); joint_index < tree_->num_joints();
+       ++joint_index) {
+    internal_tree()
+        .get_joint(joint_index)
+        .SetDefaultParameters(parameters);
+  }
+  // JointActuators.
+  for (JointActuatorIndex joint_actuator_index(0);
+       joint_actuator_index < tree_->num_actuators(); ++joint_actuator_index) {
+    internal_tree()
+        .get_joint_actuator(joint_actuator_index)
+        .SetDefaultParameters(parameters);
+  }
+  // Bodies.
+  for (BodyIndex body_index(0); body_index < tree_->num_bodies();
+       ++body_index) {
+    internal_tree()
+        .get_body(body_index)
+        .SetDefaultParameters(parameters);
+  }
+  // Frames.
+  for (FrameIndex frame_index(0); frame_index < tree_->num_frames();
+       ++frame_index) {
+    internal_tree()
+        .get_frame(frame_index)
+        .SetDefaultParameters(parameters);
+  }
+  // Force Elements.
+  for (ForceElementIndex force_element_index(0);
+       force_element_index < tree_->num_force_elements();
+       ++force_element_index) {
+    internal_tree()
+        .get_force_element(force_element_index)
+        .SetDefaultParameters(parameters);
+  }
+}
+
+template <typename T>
 MultibodyTreeSystem<T>::~MultibodyTreeSystem() = default;
 
 template <typename T>
-MultibodyTree<T>& MultibodyTreeSystem<T>::mutable_tree() const {
+MultibodyTree<T>& MultibodyTreeSystem<T>::mutable_tree() {
   DRAKE_DEMAND(tree_ != nullptr);
   return *tree_;
 }
@@ -155,8 +206,8 @@ void MultibodyTreeSystem<T>::Finalize() {
   }
 
   // TODO(joemasterjohn): Create more granular parameter tickets for finer
-  // control over cache dependencies on parameters. For example,
-  // all_rigid_body_parameters, etc.
+  //  control over cache dependencies on parameters. For example,
+  //  all_rigid_body_parameters, etc.
 
   // Allocate position cache.
   cache_indexes_.position_kinematics = this->DeclareCacheEntry(
@@ -176,6 +227,13 @@ void MultibodyTreeSystem<T>::Finalize() {
       std::string("reflected inertia"),
       VectorX<T>(internal_tree().num_velocities()),
       &MultibodyTreeSystem<T>::CalcReflectedInertia,
+      {this->all_parameters_ticket()}).cache_index();
+
+  // Allocate cache entry for joint damping.
+  cache_indexes_.joint_damping = this->DeclareCacheEntry(
+      std::string("joint damping"),
+      VectorX<T>(internal_tree().num_velocities()),
+      &MultibodyTreeSystem<T>::CalcJointDamping,
       {this->all_parameters_ticket()}).cache_index();
 
   // Allocate cache entry for composite-body inertias Mc_B_W(q) for each body.

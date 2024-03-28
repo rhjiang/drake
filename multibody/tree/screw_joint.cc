@@ -57,7 +57,7 @@ std::unique_ptr<Joint<ToScalar>> ScrewJoint<T>::TemplatedDoCloneToScalar(
       this->name(), frame_on_parent_body_clone, frame_on_child_body_clone,
       this->screw_axis(),
       this->screw_pitch(),
-      this->damping());
+      this->default_damping());
   joint_clone->set_position_limits(this->position_lower_limits(),
                                    this->position_upper_limits());
   joint_clone->set_velocity_limits(this->velocity_lower_limits(),
@@ -98,7 +98,7 @@ ScrewJoint<T>::MakeImplementationBlueprint() const {
       this->frame_on_parent(), this->frame_on_child(), this->screw_axis(),
       screw_pitch_);
   screw_mobilizer->set_default_position(this->default_positions());
-  blue_print->mobilizers_.push_back(std::move(screw_mobilizer));
+  blue_print->mobilizer = std::move(screw_mobilizer);
   return blue_print;
 }
 

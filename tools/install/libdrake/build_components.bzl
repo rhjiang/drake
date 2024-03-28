@@ -47,7 +47,6 @@ LIBDRAKE_COMPONENTS = [
     "//lcm",
     "//manipulation/kinova_jaco",
     "//manipulation/kuka_iiwa",
-    "//manipulation/planner",  # 2023-06-01 Remove this with completed deprecation  # noqa
     "//manipulation/schunk_wsg",
     "//manipulation/util",
     "//math",
@@ -75,6 +74,8 @@ LIBDRAKE_COMPONENTS = [
     "//multibody/triangle_quadrature",
     "//perception",
     "//planning",
+    "//planning/graph_algorithms",
+    "//planning/iris",
     "//planning/trajectory_optimization",
     "//solvers",
     "//systems/analysis",

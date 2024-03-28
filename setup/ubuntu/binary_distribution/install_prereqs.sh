@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Install development and runtime prerequisites for binary distributions of
-# Drake on Ubuntu 20.04 (Focal) or 22.04 (Jammy).
+# Drake on Ubuntu.
 
 set -euo pipefail
 
@@ -38,7 +38,7 @@ fi
 
 
 if command -v conda &>/dev/null; then
-  echo 'WARNING: Anaconda is NOT supported for building and using the Drake Python bindings' >&2
+  echo 'NOTE: Drake is not tested regularly with Anaconda, so you may experience compatibility hiccups; when asking for help, be sure to mention that Conda is involved.' >&2
 fi
 
 binary_distribution_called_update=0
@@ -66,8 +66,8 @@ apt-get install ${maybe_yes} --no-install-recommends lsb-release
 
 codename=$(lsb_release -sc)
 
-if ! [[ "${codename}" =~ (focal|jammy) ]]; then
-  echo 'ERROR: This script requires Ubuntu 20.04 (Focal) or 22.04 (Jammy)' >&2
+if ! [[ "${codename}" =~ (jammy|noble) ]]; then
+  echo 'ERROR: This script requires Ubuntu 22.04 (Jammy) or 24.04 (Noble)' >&2
   exit 2
 fi
 

@@ -70,7 +70,8 @@ FUNCTION_KINDS = [
 
 
 RECURSE_LIST = [
-    CursorKind.TRANSLATION_UNIT,
+    CursorKind.TRANSLATION_UNIT_300,
+    CursorKind.TRANSLATION_UNIT_350,
     CursorKind.NAMESPACE,
     CursorKind.CLASS_DECL,
     CursorKind.STRUCT_DECL,
@@ -256,13 +257,15 @@ def get_name_chain(cursor):
     name = cursor.spelling
     name_chain = [name]
     p = cursor.semantic_parent
-    while p and p.kind != CursorKind.TRANSLATION_UNIT:
+    while p and not p.kind.is_translation_unit():
         piece = p.spelling
         name_chain.insert(0, piece)
         p = p.semantic_parent
-    # Do not try to specify names for anonymous structs.
-    while '' in name_chain:
-        name_chain.remove('')
+    # Prune away the names of anonymous structs and enums.
+    name_chain = [
+        x for x in name_chain
+        if x != '' and not x.startswith('(unnamed')
+    ]
     return tuple(name_chain)
 
 
@@ -306,7 +309,7 @@ def extract(include_file_map, cursor, symbol_tree, deprecations=None):
     """
     Extracts libclang cursors and add to a symbol tree.
     """
-    if cursor.kind == CursorKind.TRANSLATION_UNIT:
+    if cursor.kind.is_translation_unit():
         deprecations = []
         for i in cursor.get_children():
             if i.kind == CursorKind.MACRO_DEFINITION:
@@ -343,7 +346,8 @@ def extract(include_file_map, cursor, symbol_tree, deprecations=None):
     if cursor.kind in PRINT_LIST:
         if node is None:
             node = get_node()
-        if len(cursor.spelling) > 0:
+        name = cursor.spelling
+        if len(name) > 0 and not name.startswith('(unnamed'):
             comment = extract_comment(cursor, deprecations)
             comment = process_comment(comment)
             symbol = Symbol(cursor, name_chain, include, line, comment)
@@ -733,7 +737,7 @@ def main():
     os.mkdir(tmpdir)
     glue_filename = os.path.join(tmpdir, "mkdoc_glue.h")
     with open(glue_filename, 'w') as glue_f:
-        # As the first line of the glue file, include a C++17 standard library
+        # As the first line of the glue file, include a C++ standard library
         # file to sanity check that it's working, before we start processing
         # the user headers.
         glue_f.write("#include <optional>\n")

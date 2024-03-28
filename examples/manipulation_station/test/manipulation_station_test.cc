@@ -355,9 +355,6 @@ GTEST_TEST(ManipulationStationTest, CheckDynamics) {
 //  - Case 2: zero spatial forces and feedforward torques equal to the
 //    generalized forces equivalent to the spatial forces from Case 1.
 GTEST_TEST(ManipulationStationTest, CheckDynamicsUnderExternallyAppliedForce) {
-  // TODO(xuchenhan-tri): Re-enable this test after fixing the wiring of
-  // manipulation station as a follow up to #19225.
-  GTEST_SKIP();
   const double kTimeStep = 0.002;
   ManipulationStation<double> station(kTimeStep);
   station.SetupManipulationClassStation();
@@ -469,7 +466,7 @@ GTEST_TEST(ManipulationStationTest, AddManipulandFromFile) {
       station.get_multibody_plant().num_model_instances();
 
   station.AddManipulandFromFile(
-      "drake/manipulation/models/ycb/sdf/003_cracker_box.sdf",
+      "drake_models/ycb/003_cracker_box.sdf",
       math::RigidTransform<double>::Identity());
 
   // Check that the cracker box was added.
@@ -477,7 +474,7 @@ GTEST_TEST(ManipulationStationTest, AddManipulandFromFile) {
             num_base_instances + 1);
 
   station.AddManipulandFromFile(
-      "drake/manipulation/models/ycb/sdf/004_sugar_box.sdf",
+      "drake_models/ycb/004_sugar_box.sdf",
       math::RigidTransform<double>::Identity());
 
   // Check that the sugar box was added.

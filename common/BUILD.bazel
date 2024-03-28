@@ -1,5 +1,5 @@
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_binary",
     "drake_cc_googletest",
     "drake_cc_library",
@@ -7,11 +7,11 @@ load(
     "drake_cc_test",
 )
 load(
-    "@drake//tools/skylark:drake_py.bzl",
+    "//tools/skylark:drake_py.bzl",
     "drake_py_binary",
     "drake_py_unittest",
 )
-load("@drake//tools/install:install.bzl", "install")
+load("//tools/install:install.bzl", "install")
 load("//tools/lint:lint.bzl", "add_lint_tests")
 
 package(default_visibility = ["//visibility:public"])
@@ -44,6 +44,8 @@ drake_cc_package_library(
         ":name_value",
         ":network_policy",
         ":nice_type_name",
+        ":overloaded",
+        ":parallelism",
         ":pointer_cast",
         ":polynomial",
         ":random",
@@ -51,7 +53,9 @@ drake_cc_package_library(
         ":reset_on_copy",
         ":scope_exit",
         ":scoped_singleton",
+        ":sha256",
         ":sorted_pair",
+        ":string_container",
         ":temp_directory",
         ":timer",
         ":type_safe_index",
@@ -83,6 +87,7 @@ drake_cc_library(
     name = "essential",
     srcs = [
         "drake_assert_and_throw.cc",
+        "drake_deprecated.cc",
         "text_logging.cc",
     ],
     hdrs = [
@@ -395,6 +400,20 @@ drake_cc_library(
 )
 
 drake_cc_library(
+    name = "overloaded",
+    hdrs = ["overloaded.h"],
+)
+
+drake_cc_library(
+    name = "parallelism",
+    srcs = ["parallelism.cc"],
+    hdrs = ["parallelism.h"],
+    deps = [
+        ":essential",
+    ],
+)
+
+drake_cc_library(
     name = "is_cloneable",
     hdrs = ["is_cloneable.h"],
 )
@@ -427,6 +446,18 @@ drake_cc_library(
 drake_cc_library(
     name = "reset_on_copy",
     hdrs = ["reset_on_copy.h"],
+)
+
+drake_cc_library(
+    name = "sha256",
+    srcs = ["sha256.cc"],
+    hdrs = ["sha256.h"],
+    interface_deps = [
+        ":essential",
+    ],
+    deps = [
+        "@picosha2_internal//:picosha2",
+    ],
 )
 
 drake_cc_library(
@@ -499,6 +530,17 @@ drake_cc_library(
     hdrs = ["scoped_singleton.h"],
     deps = [
         ":essential",
+    ],
+)
+
+drake_cc_library(
+    name = "string_container",
+    hdrs = [
+        "string_hash.h",
+        "string_map.h",
+        "string_set.h",
+        "string_unordered_map.h",
+        "string_unordered_set.h",
     ],
 )
 
@@ -665,6 +707,14 @@ drake_cc_googletest(
 )
 
 drake_cc_googletest(
+    name = "sha256_test",
+    deps = [
+        ":sha256",
+        ":temp_directory",
+    ],
+)
+
+drake_cc_googletest(
     name = "pointer_cast_test",
     deps = [
         ":pointer_cast",
@@ -722,42 +772,6 @@ drake_cc_googletest(
     ],
 )
 
-# Functional test of DRAKE_ASSERT at compile time.
-drake_cc_test(
-    name = "drake_assert_test_compile",
-    deps = [
-        ":essential",
-        ":unused",
-    ],
-)
-
-# Functional test that mistyped DRAKE_ASSERTs will fail to compile.
-sh_test(
-    name = "drake_assert_test_compile_variants",
-    size = "small",
-    srcs = ["test/drake_assert_test_compile_variants.sh"],
-    args = [
-        "$(location //tools/cc_toolchain:capture_cc.env)",
-        "$(location :test/drake_assert_test_compile.cc)",
-    ],
-    data = [
-        "drake_assert.h",
-        "test/drake_assert_test_compile.cc",
-        "unused.h",
-        "//tools/cc_toolchain:capture_cc.env",
-        "//tools/cc_toolchain:toolchain_deps",
-    ],
-    # Fails when run under Valgrind tools.
-    tags = ["no_valgrind_tools"],
-)
-
-# TODO(eric.cousineau): Remove this alias and update `issue_template.md` to
-# use the actual target name after 2018/10/31.
-alias(
-    name = "print_host_settings",
-    actual = "//tools/cc_toolchain:print_host_settings",
-)
-
 drake_cc_googletest(
     name = "drake_copyable_test",
     deps = [
@@ -795,6 +809,7 @@ drake_cc_googletest(
     copts = ["-Wno-deprecated-declarations"],
     deps = [
         ":essential",
+        "//common/test_utilities:expect_throws_message",
     ],
 )
 
@@ -880,6 +895,7 @@ drake_cc_googletest(
         ":drake_path",
         ":find_resource",
         "//common/test_utilities:expect_no_throw",
+        "//common/test_utilities:expect_throws_message",
     ],
 )
 
@@ -1010,12 +1026,35 @@ drake_cc_googletest(
 )
 
 drake_cc_googletest(
+    name = "overloaded_test",
+    deps = [
+        "//common:overloaded",
+    ],
+)
+
+drake_cc_googletest(
+    name = "parallelism_test",
+    num_threads = 2,
+    deps = [
+        ":parallelism",
+    ],
+)
+
+drake_cc_googletest(
     name = "polynomial_test",
     deps = [
         ":essential",
         "//common/test_utilities:eigen_matrix_compare",
         "//common/test_utilities:expect_no_throw",
         "//common/test_utilities:random_polynomial_matrix",
+    ],
+)
+
+drake_cc_googletest(
+    name = "string_container_test",
+    deps = [
+        ":string_container",
+        "//common/test_utilities:limit_malloc",
     ],
 )
 
@@ -1178,6 +1217,7 @@ drake_cc_googletest(
 )
 
 add_lint_tests(
+    enable_clang_format_lint = False,
     python_lint_extra_srcs = [
         ":test/resource_tool_installed_test.py",
     ],

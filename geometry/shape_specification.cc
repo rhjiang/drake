@@ -3,47 +3,69 @@
 #include <algorithm>
 #include <filesystem>
 #include <limits>
+#include <memory>
 
 #include <fmt/format.h>
 
+#include "drake/common/drake_throw.h"
 #include "drake/common/nice_type_name.h"
+#include "drake/common/overloaded.h"
+#include "drake/geometry/proximity/make_convex_hull_mesh_impl.h"
 #include "drake/geometry/proximity/meshing_utilities.h"
 #include "drake/geometry/proximity/obj_to_surface_mesh.h"
 #include "drake/geometry/proximity/triangle_surface_mesh.h"
 
 namespace drake {
 namespace geometry {
+namespace {
+
+std::string GetExtensionLower(const std::string& filename) {
+  std::filesystem::path file_path(filename);
+  std::string ext = file_path.extension();
+  std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
+    return std::tolower(c);
+  });
+  return ext;
+}
+
+// Computes a convex hull and assigns it to the given shared pointer in a
+// thread-safe manner. Only does work if the shared_ptr is null (i.e., there is
+// no convex hull yet). Used by Mesh::convex_hull() and Convex::convex_hull().
+// Note: the correctness of this function is tested in
+// shape_specification_thread_test.cc.
+void ComputeConvexHullAsNecessary(
+    std::shared_ptr<PolygonSurfaceMesh<double>>* hull_ptr,
+    std::string_view filename, double scale) {
+  std::shared_ptr<PolygonSurfaceMesh<double>> check =
+      std::atomic_load(hull_ptr);
+  if (check == nullptr) {
+    // Note: This approach means that multiple threads *may* redundantly compute
+    // the convex hull; but only the first one will set the hull.
+    auto new_hull = std::make_shared<PolygonSurfaceMesh<double>>(
+        internal::MakeConvexHull(filename, scale));
+    std::atomic_compare_exchange_strong(hull_ptr, &check, new_hull);
+  }
+}
+
+}  // namespace
 
 using math::RigidTransform;
 
-Shape::~Shape() {}
+Shape::Shape() = default;
+
+Shape::~Shape() = default;
 
 void Shape::Reify(ShapeReifier* reifier, void* user_data) const {
-  reifier_(*this, reifier, user_data);
+  DRAKE_THROW_UNLESS(reifier != nullptr);
+  DoReify(reifier, user_data);
 }
 
-std::unique_ptr<Shape> Shape::Clone() const { return cloner_(*this); }
-
-template <typename S>
-Shape::Shape(ShapeTag<S>) {
-  static_assert(std::is_base_of_v<Shape, S>,
-                "Concrete shapes *must* be derived from the Shape class");
-  cloner_ = [](const Shape& shape_arg) {
-    DRAKE_DEMAND(typeid(shape_arg) == typeid(S));
-    const S& derived_shape = static_cast<const S&>(shape_arg);
-    return std::unique_ptr<Shape>(new S(derived_shape));
-  };
-  reifier_ = [](const Shape& shape_arg, ShapeReifier* reifier,
-                void* user_data) {
-    DRAKE_DEMAND(typeid(shape_arg) == typeid(S));
-    const S& derived_shape = static_cast<const S&>(shape_arg);
-    reifier->ImplementGeometry(derived_shape, user_data);
-  };
+std::unique_ptr<Shape> Shape::Clone() const {
+  return DoClone();
 }
 
 Box::Box(double width, double depth, double height)
-    : Shape(ShapeTag<Box>()),
-      size_(width, depth, height) {
+    : size_(width, depth, height) {
   if (width <= 0 || depth <= 0 || height <= 0) {
     throw std::logic_error(
         fmt::format("Box width, depth, and height should all be > 0 (were {}, "
@@ -59,8 +81,13 @@ Box Box::MakeCube(double edge_size) {
   return Box(edge_size, edge_size, edge_size);
 }
 
+std::string Box::do_to_string() const {
+  return fmt::format("Box(width={}, depth={}, height={})", width(), depth(),
+                     height());
+}
+
 Capsule::Capsule(double radius, double length)
-    : Shape(ShapeTag<Capsule>()), radius_(radius), length_(length) {
+    : radius_(radius), length_(length) {
   if (radius <= 0 || length <= 0) {
     throw std::logic_error(
         fmt::format("Capsule radius and length should both be > 0 (were {} "
@@ -72,19 +99,30 @@ Capsule::Capsule(double radius, double length)
 Capsule::Capsule(const Vector2<double>& measures)
     : Capsule(measures(0), measures(1)) {}
 
+std::string Capsule::do_to_string() const {
+  return fmt::format("Capsule(radius={}, length={})", radius(), length());
+}
+
 Convex::Convex(const std::string& filename, double scale)
-    : Shape(ShapeTag<Convex>()),
-      filename_(std::filesystem::absolute(filename)),
+    : filename_(std::filesystem::absolute(filename)),
+      extension_(GetExtensionLower(filename_)),
       scale_(scale) {
   if (std::abs(scale) < 1e-8) {
     throw std::logic_error("Convex |scale| cannot be < 1e-8.");
   }
 }
 
+const PolygonSurfaceMesh<double>& Convex::convex_hull() const {
+  ComputeConvexHullAsNecessary(&hull_, filename_, scale_);
+  return *hull_;
+}
+
+std::string Convex::do_to_string() const {
+  return fmt::format("Convex(filename='{}', scale={})", filename(), scale());
+}
+
 Cylinder::Cylinder(double radius, double length)
-    : Shape(ShapeTag<Cylinder>()),
-      radius_(radius),
-      length_(length) {
+    : radius_(radius), length_(length) {
   if (radius <= 0 || length <= 0) {
     throw std::logic_error(
         fmt::format("Cylinder radius and length should both be > 0 (were {} "
@@ -96,8 +134,11 @@ Cylinder::Cylinder(double radius, double length)
 Cylinder::Cylinder(const Vector2<double>& measures)
     : Cylinder(measures(0), measures(1)) {}
 
-Ellipsoid::Ellipsoid(double a, double b, double c)
-    : Shape(ShapeTag<Ellipsoid>()), radii_(a, b, c) {
+std::string Cylinder::do_to_string() const {
+  return fmt::format("Cylinder(radius={}, length={})", radius(), length());
+}
+
+Ellipsoid::Ellipsoid(double a, double b, double c) : radii_(a, b, c) {
   if (a <= 0 || b <= 0 || c <= 0) {
     throw std::logic_error(
         fmt::format("Ellipsoid lengths of principal semi-axes a, b, and c "
@@ -109,7 +150,11 @@ Ellipsoid::Ellipsoid(double a, double b, double c)
 Ellipsoid::Ellipsoid(const Vector3<double>& measures)
     : Ellipsoid(measures(0), measures(1), measures(2)) {}
 
-HalfSpace::HalfSpace() : Shape(ShapeTag<HalfSpace>()) {}
+std::string Ellipsoid::do_to_string() const {
+  return fmt::format("Ellipsoid(a={}, b={}, c={})", a(), b(), c());
+}
+
+HalfSpace::HalfSpace() = default;
 
 RigidTransform<double> HalfSpace::MakePose(const Vector3<double>& Hz_dir_F,
                                            const Vector3<double>& p_FB) {
@@ -142,17 +187,30 @@ RigidTransform<double> HalfSpace::MakePose(const Vector3<double>& Hz_dir_F,
   return RigidTransform<double>(R_FH, p_FH);
 }
 
+std::string HalfSpace::do_to_string() const {
+  return "HalfSpace()";
+}
+
 Mesh::Mesh(const std::string& filename, double scale)
-    : Shape(ShapeTag<Mesh>()),
-      filename_(std::filesystem::absolute(filename)),
+    : filename_(std::filesystem::absolute(filename)),
+      extension_(GetExtensionLower(filename_)),
       scale_(scale) {
   if (std::abs(scale) < 1e-8) {
     throw std::logic_error("Mesh |scale| cannot be < 1e-8.");
   }
 }
 
+const PolygonSurfaceMesh<double>& Mesh::convex_hull() const {
+  ComputeConvexHullAsNecessary(&hull_, filename_, scale_);
+  return *hull_;
+}
+
+std::string Mesh::do_to_string() const {
+  return fmt::format("Mesh(filename='{}', scale={})", filename(), scale());
+}
+
 MeshcatCone::MeshcatCone(double height, double a, double b)
-    : Shape(ShapeTag<MeshcatCone>()), height_(height), a_(a), b_(b) {
+    : height_(height), a_(a), b_(b) {
   if (height <= 0 || a <= 0 || b <= 0) {
     throw std::logic_error(fmt::format(
         "MeshcatCone parameters height, a, and b should all be > 0 (they were "
@@ -164,12 +222,19 @@ MeshcatCone::MeshcatCone(double height, double a, double b)
 MeshcatCone::MeshcatCone(const Vector3<double>& measures)
     : MeshcatCone(measures(0), measures(1), measures(2)) {}
 
-Sphere::Sphere(double radius)
-    : Shape(ShapeTag<Sphere>()), radius_(radius) {
+std::string MeshcatCone::do_to_string() const {
+  return fmt::format("MeshcatCone(height={}, a={}, b={})", height(), a(), b());
+}
+
+Sphere::Sphere(double radius) : radius_(radius) {
   if (radius < 0) {
     throw std::logic_error(
         fmt::format("Sphere radius should be >= 0 (was {}).", radius));
   }
+}
+
+std::string Sphere::do_to_string() const {
+  return fmt::format("Sphere(radius={})", radius());
 }
 
 ShapeReifier::~ShapeReifier() = default;
@@ -211,7 +276,7 @@ void ShapeReifier::ImplementGeometry(const Sphere& sphere, void*) {
 }
 
 void ShapeReifier::DefaultImplementGeometry(const Shape& shape) {
-  ThrowUnsupportedGeometry(ShapeName(shape).name());
+  ThrowUnsupportedGeometry(std::string{shape.type_name()});
 }
 
 void ShapeReifier::ThrowUnsupportedGeometry(const std::string& shape_name) {
@@ -225,46 +290,17 @@ ShapeName::ShapeName(const Shape& shape) {
 
 ShapeName::~ShapeName() = default;
 
-void ShapeName::ImplementGeometry(const Box&, void*) {
-  string_ = "Box";
+void ShapeName::DefaultImplementGeometry(const Shape& shape) {
+  string_ = shape.type_name();
 }
 
-void ShapeName::ImplementGeometry(const Capsule&, void*) {
-  string_ = "Capsule";
-}
-
-void ShapeName::ImplementGeometry(const Convex&, void*) {
-  string_ = "Convex";
-}
-
-void ShapeName::ImplementGeometry(const Cylinder&, void*) {
-  string_ = "Cylinder";
-}
-
-void ShapeName::ImplementGeometry(const Ellipsoid&, void*) {
-  string_ = "Ellipsoid";
-}
-
-void ShapeName::ImplementGeometry(const HalfSpace&, void*) {
-  string_ = "HalfSpace";
-}
-
-void ShapeName::ImplementGeometry(const Mesh&, void*) {
-  string_ = "Mesh";
-}
-
-void ShapeName::ImplementGeometry(const MeshcatCone&, void*) {
-  string_ = "MeshcatCone";
-}
-
-void ShapeName::ImplementGeometry(const Sphere&, void*) {
-  string_ = "Sphere";
-}
-
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 std::ostream& operator<<(std::ostream& out, const ShapeName& name) {
   out << name.name();
   return out;
 }
+#pragma GCC diagnostic pop
 
 namespace {
 
@@ -272,7 +308,9 @@ template <class MeshType>
 double CalcMeshVolumeFromFile(const MeshType& mesh) {
   std::string extension = std::filesystem::path(mesh.filename()).extension();
   std::transform(extension.begin(), extension.end(), extension.begin(),
-                 [](unsigned char c) { return std::tolower(c); });
+                 [](unsigned char c) {
+                   return std::tolower(c);
+                 });
   // TODO(russt): Support .vtk files.
   if (extension != ".obj") {
     throw std::runtime_error(fmt::format(
@@ -285,54 +323,68 @@ double CalcMeshVolumeFromFile(const MeshType& mesh) {
   return internal::CalcEnclosedVolume(surface_mesh);
 }
 
-class CalcVolumeReifier final : public ShapeReifier {
- public:
-  CalcVolumeReifier() = default;
-
-  using ShapeReifier::ImplementGeometry;
-
-  void ImplementGeometry(const Box& box, void*) final {
-    volume_ = box.width() * box.depth() * box.height();
-  }
-  void ImplementGeometry(const Capsule& capsule, void*) final {
-    volume_ = M_PI * std::pow(capsule.radius(), 2) * capsule.length() +
-         4.0 / 3.0 * M_PI * std::pow(capsule.radius(), 3);
-  }
-  void ImplementGeometry(const Convex& mesh, void*) {
-    volume_ = CalcMeshVolumeFromFile(mesh);
-  }
-  void ImplementGeometry(const Cylinder& cylinder, void*) final {
-    volume_ = M_PI * std::pow(cylinder.radius(), 2) * cylinder.length();
-  }
-  void ImplementGeometry(const Ellipsoid& ellipsoid, void*) final {
-    volume_ = 4.0 / 3.0 * M_PI * ellipsoid.a() * ellipsoid.b() * ellipsoid.c();
-  }
-  void ImplementGeometry(const HalfSpace&, void*) final {
-    volume_ = std::numeric_limits<double>::infinity();
-  }
-  void ImplementGeometry(const Mesh& mesh, void*) {
-    volume_ = CalcMeshVolumeFromFile(mesh);
-  }
-  void ImplementGeometry(const MeshcatCone& cone, void*) final {
-    volume_ = 1.0 / 3.0 * M_PI * cone.a() * cone.b() * cone.height();
-  }
-  void ImplementGeometry(const Sphere& sphere, void*) final {
-    volume_ = 4.0 / 3.0 * M_PI * std::pow(sphere.radius(), 3);
-  }
-
-  double volume() const { return volume_; }
-
- private:
-  double volume_{0.0};
-};
-
 }  // namespace
 
 double CalcVolume(const Shape& shape) {
-  CalcVolumeReifier reifier;
-  shape.Reify(&reifier);
-  return reifier.volume();
+  return shape.Visit<double>(overloaded{
+      [](const Box& box) {
+        return box.width() * box.depth() * box.height();
+      },
+      [](const Capsule& capsule) {
+        return M_PI * std::pow(capsule.radius(), 2) * capsule.length() +
+               4.0 / 3.0 * M_PI * std::pow(capsule.radius(), 3);
+      },
+      [](const Convex& mesh) {
+        return CalcMeshVolumeFromFile(mesh);
+      },
+      [](const Cylinder& cylinder) {
+        return M_PI * std::pow(cylinder.radius(), 2) * cylinder.length();
+      },
+      [](const Ellipsoid& ellipsoid) {
+        return 4.0 / 3.0 * M_PI * ellipsoid.a() * ellipsoid.b() * ellipsoid.c();
+      },
+      [](const HalfSpace&) {
+        return std::numeric_limits<double>::infinity();
+      },
+      [](const Mesh& mesh) {
+        return CalcMeshVolumeFromFile(mesh);
+      },
+      [](const MeshcatCone& cone) {
+        return 1.0 / 3.0 * M_PI * cone.a() * cone.b() * cone.height();
+      },
+      [](const Sphere& sphere) {
+        return 4.0 / 3.0 * M_PI * std::pow(sphere.radius(), 3);
+      }});
 }
+
+// The NVI function definitions are enough boilerplate to merit a macro to
+// implement them, and we might as well toss in the dtor for good measure.
+
+#define DRAKE_DEFINE_SHAPE_SUBCLASS_BOILERPLATE(ShapeType)                \
+  ShapeType::~ShapeType() = default;                                      \
+  void ShapeType::DoReify(ShapeReifier* shape_reifier, void* user_data)   \
+      const {                                                             \
+    shape_reifier->ImplementGeometry(*this, user_data);                   \
+  }                                                                       \
+  std::unique_ptr<Shape> ShapeType::DoClone() const {                     \
+    return std::unique_ptr<ShapeType>(new ShapeType(*this));              \
+  }                                                                       \
+  std::string_view ShapeType::do_type_name() const { return #ShapeType; } \
+  Shape::VariantShapeConstPtr ShapeType::get_variant_this() const {       \
+    return this;                                                          \
+  }
+
+DRAKE_DEFINE_SHAPE_SUBCLASS_BOILERPLATE(Box)
+DRAKE_DEFINE_SHAPE_SUBCLASS_BOILERPLATE(Capsule)
+DRAKE_DEFINE_SHAPE_SUBCLASS_BOILERPLATE(Convex)
+DRAKE_DEFINE_SHAPE_SUBCLASS_BOILERPLATE(Cylinder)
+DRAKE_DEFINE_SHAPE_SUBCLASS_BOILERPLATE(Ellipsoid)
+DRAKE_DEFINE_SHAPE_SUBCLASS_BOILERPLATE(HalfSpace)
+DRAKE_DEFINE_SHAPE_SUBCLASS_BOILERPLATE(Mesh)
+DRAKE_DEFINE_SHAPE_SUBCLASS_BOILERPLATE(MeshcatCone)
+DRAKE_DEFINE_SHAPE_SUBCLASS_BOILERPLATE(Sphere)
+
+#undef DRAKE_DEFINE_SHAPE_SUBCLASS_BOILERPLATE
 
 }  // namespace geometry
 }  // namespace drake

@@ -13,9 +13,9 @@ namespace geometry {
 namespace internal {
 
 template <typename T>
-VolumeMeshFieldLinear<T, T> MakeBoxPressureField(
-    const Box& box, const VolumeMesh<T>* mesh_B,
-    const T hydroelastic_modulus) {
+VolumeMeshFieldLinear<T, T> MakeBoxPressureField(const Box& box,
+                                                 const VolumeMesh<T>* mesh_B,
+                                                 const T hydroelastic_modulus) {
   DRAKE_DEMAND(hydroelastic_modulus > T(0));
   const Vector3<double> half_size = box.size() / 2.0;
   const double min_half_size = half_size.minCoeff();
@@ -50,12 +50,12 @@ VolumeMeshFieldLinear<T, T> MakeBoxPressureField(
     pressure_values.push_back(hydroelastic_modulus * extent);
   }
 
-  return VolumeMeshFieldLinear<T, T>(std::move(pressure_values), mesh_B);
+  return VolumeMeshFieldLinear<T, T>(std::move(pressure_values), mesh_B,
+                                     MeshGradientMode::kOkOrMarkDegenerate);
 }
 
-DRAKE_DEFINE_FUNCTION_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_NONSYMBOLIC_SCALARS((
-    &MakeBoxPressureField<T>
-))
+DRAKE_DEFINE_FUNCTION_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_NONSYMBOLIC_SCALARS(
+    (&MakeBoxPressureField<T>))
 
 }  // namespace internal
 }  // namespace geometry

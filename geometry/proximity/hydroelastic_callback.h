@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-#include <drake_vendor/fcl/fcl.h>
+#include <fcl/fcl.h>
 #include <fmt/format.h>
 
 #include "drake/common/drake_export.h"
@@ -160,8 +160,7 @@ std::unique_ptr<ContactSurface<T>> DispatchCompliantCompliantCalculation(
   const Bvh<Obb, VolumeMesh<double>>& bvh1_G = compliant1_G.bvh();
 
   return ComputeContactSurfaceFromCompliantVolumes(
-      id0, field0_F, bvh0_F, X_WF, id1, field1_G, bvh1_G, X_WG,
-      representation);
+      id0, field0_F, bvh0_F, X_WF, id1, field1_G, bvh1_G, X_WG, representation);
 }
 
 /* Calculates the contact surface (if it exists) between two potentially
@@ -183,6 +182,13 @@ CalcContactSurfaceResult MaybeCalcContactSurface(
     CallbackData<T>* data) {
   const EncodedData encoding_a(*object_A_ptr);
   const EncodedData encoding_b(*object_B_ptr);
+
+  // One or two objects have vanished. We can report that we're done
+  // calculating the contact (no contact).
+  if (data->geometries.is_vanished(encoding_a.id()) ||
+      data->geometries.is_vanished(encoding_b.id())) {
+    return CalcContactSurfaceResult::kCalculated;
+  }
 
   const HydroelasticType type_A =
       data->geometries.hydroelastic_type(encoding_a.id());
@@ -284,8 +290,8 @@ bool Callback(fcl::CollisionObjectd* object_A_ptr,
   const EncodedData encoding_a(*object_A_ptr);
   const EncodedData encoding_b(*object_B_ptr);
 
-  const bool can_collide = data.collision_filter.CanCollideWith(
-      encoding_a.id(), encoding_b.id());
+  const bool can_collide =
+      data.collision_filter.CanCollideWith(encoding_a.id(), encoding_b.id());
 
   if (can_collide) {
     CalcContactSurfaceResult result =
@@ -327,7 +333,8 @@ bool Callback(fcl::CollisionObjectd* object_A_ptr,
       case CalcContactSurfaceResult::kHalfSpaceHalfSpace:
         throw std::logic_error(fmt::format(
             "Requested contact between two half spaces with ids {} and {}; "
-            "that is not allowed", encoding_a.id(), encoding_b.id()));
+            "that is not allowed",
+            encoding_a.id(), encoding_b.id()));
       case CalcContactSurfaceResult::kCalculated:
         // Already handled above.
         break;
@@ -389,7 +396,9 @@ bool CallbackWithFallback(fcl::CollisionObjectd* object_A_ptr,
   return false;
 }
 
+// clang-format off
 }  // namespace hydroelastic
+// clang-format on
 }  // namespace internal
 }  // namespace geometry
 }  // namespace drake

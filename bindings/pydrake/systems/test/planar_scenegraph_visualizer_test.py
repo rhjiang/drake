@@ -5,7 +5,6 @@ import numpy as np
 import os
 
 from pydrake.common import FindResourceOrThrow
-from pydrake.common.test_utilities.deprecation import catch_drake_warnings
 from pydrake.geometry import Box, Mesh
 from pydrake.math import RigidTransform
 from pydrake.multibody.parsing import Parser
@@ -163,11 +162,11 @@ class TestPlanarSceneGraphVisualizer(unittest.TestCase):
         runfiles = bazel_tools.tools.python.runfiles.runfiles.Create()
         mesh_name = runfiles.Rlocation(
             "drake_models/iiwa_description/meshes/iiwa14/visual/"
-            "link_0.obj")
+            "link_0.gltf")
         scene_graph = scene_graph_with_mesh(mesh_name)
         PlanarSceneGraphVisualizer(scene_graph)
 
-        # This should load correctly, too, by substituting the .obj.
+        # This should load correctly, too, by substituting the .gltf.
         mesh_name_wrong_ext = os.path.splitext(mesh_name)[0] + ".STL"
         scene_graph = scene_graph_with_mesh(mesh_name_wrong_ext)
         PlanarSceneGraphVisualizer(scene_graph)

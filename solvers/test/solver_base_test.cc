@@ -15,14 +15,10 @@ using ::testing::HasSubstr;
 // A stub subclass of SolverBase, so that we can instantiate and test it.
 class StubSolverBase final : public SolverBase {
  public:
-  // On 2023-06-01 upon completion of deprecation, remove this pragma and
-  // switch from &id to id() below.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(StubSolverBase)
   StubSolverBase()
       : SolverBase(
-            &id,
+            id(),
             [this]() {
               return available_;
             },
@@ -32,7 +28,6 @@ class StubSolverBase final : public SolverBase {
             [this](const auto& prog) {
               return satisfied_;
             }) {}
-#pragma GCC diagnostic pop
 
   // This overload passes the explain_unsatisfied functor to the base class,
   // in contrast to the above constructor which leaves it defaulted.
@@ -60,10 +55,10 @@ class StubSolverBase final : public SolverBase {
     result->set_optimal_cost(1.0);
     Eigen::VectorXd x_val = x_init;
     const auto& options_double = options.GetOptionsDouble(id());
-    if (options_double.count("x0_solution")) {
+    if (options_double.contains("x0_solution")) {
       x_val[0] = options_double.find("x0_solution")->second;
     }
-    if (options_double.count("x1_solution")) {
+    if (options_double.contains("x1_solution")) {
       x_val[1] = options_double.find("x1_solution")->second;
     }
     result->set_x_val(x_val);

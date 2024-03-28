@@ -26,10 +26,14 @@ def _actually_find_packages():
     """Work around broken(?!) setuptools."""
     result = find_packages()
     result.extend([
+        'pydrake.autodiffutils',
+        'pydrake.common',
         'pydrake.examples',
         'pydrake.geometry',
         'pydrake.manipulation',
+        'pydrake.math',
         'pydrake.solvers',
+        'pydrake.symbolic',
         'pydrake.visualization',
     ])
     print(f'Using packages={result}')
@@ -39,7 +43,7 @@ def _actually_find_packages():
 # Generate a source file we can use to produce an extension library (which we
 # do to force the wheel to not be platform-agnostic. We need this because
 # trying to build an extension module with no sources is not reliable.
-with open('dummy.c', 'wt') as f:
+with open('dummy.c', 'wt', encoding='utf-8') as f:
     f.write('void not_used() {}')
 
 

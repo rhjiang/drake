@@ -1,6 +1,7 @@
 #include "drake/geometry/internal_geometry.h"
 
 #include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -8,6 +9,7 @@
 #include "drake/common/test_utilities/expect_no_throw.h"
 #include "drake/common/test_utilities/expect_throws_message.h"
 #include "drake/geometry/proximity/make_sphere_mesh.h"
+#include "drake/geometry/proximity/polygon_surface_mesh.h"
 
 namespace drake {
 namespace geometry {
@@ -97,11 +99,11 @@ GTEST_TEST(InternalGeometryTest, SetShape) {
   // Set it to a couple of arbitrary shapes to confirm the change registers.
   const Sphere s(1.5);
   geometry.SetShape(s);
-  EXPECT_EQ(ShapeName(s).name(), ShapeName(geometry.shape()).name());
+  EXPECT_EQ(s.type_name(), geometry.shape().type_name());
 
   const Box b(1, 2, 3);
   geometry.SetShape(b);
-  EXPECT_EQ(ShapeName(b).name(), ShapeName(geometry.shape()).name());
+  EXPECT_EQ(b.type_name(), geometry.shape().type_name());
 }
 
 GTEST_TEST(InternalGeometryTest, SetPose) {
@@ -218,6 +220,17 @@ GTEST_TEST(InternalGeometryTest, DeformableGeometry) {
                                   RigidTransformd());
   EXPECT_EQ(rigid_geometry.reference_mesh(), nullptr);
   EXPECT_FALSE(rigid_geometry.is_deformable());
+}
+
+GTEST_TEST(InternalGeometryTest, Rename) {
+  InternalGeometry geometry;
+  EXPECT_TRUE(geometry.name().empty());
+  {
+    // Scope the new name to make sure the object takes a copy.
+    std::string new_name("new_name");
+    geometry.set_name(new_name);
+  }
+  EXPECT_EQ(geometry.name(), "new_name");
 }
 
 }  // namespace

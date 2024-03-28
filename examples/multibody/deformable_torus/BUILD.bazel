@@ -1,8 +1,55 @@
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_binary",
+    "drake_cc_googletest",
+    "drake_cc_library",
 )
 load("//tools/lint:lint.bzl", "add_lint_tests")
+
+drake_cc_library(
+    name = "parallel_gripper_controller",
+    srcs = [
+        "parallel_gripper_controller.cc",
+    ],
+    hdrs = [
+        "parallel_gripper_controller.h",
+    ],
+    deps = [
+        "//multibody/plant",
+    ],
+)
+
+drake_cc_library(
+    name = "point_source_force_field",
+    srcs = [
+        "point_source_force_field.cc",
+    ],
+    hdrs = [
+        "point_source_force_field.h",
+    ],
+    deps = [
+        "//multibody/plant",
+    ],
+)
+
+drake_cc_library(
+    name = "suction_cup_controller",
+    srcs = [
+        "suction_cup_controller.cc",
+    ],
+    hdrs = [
+        "suction_cup_controller.h",
+    ],
+    deps = [
+        "//multibody/plant",
+    ],
+)
+
+filegroup(
+    name = "torus_tet_mesh",
+    data = ["torus.vtk"],
+    visibility = ["//geometry:__subpackages__"],
+)
 
 drake_cc_binary(
     name = "deformable_torus",
@@ -12,13 +59,16 @@ drake_cc_binary(
     add_test_rule = 1,
     data = [
         "simple_gripper.sdf",
-        "torus.vtk",
+        ":torus_tet_mesh",
     ],
     test_rule_args = [
         "-simulation_time=0.1",
         "-realtime_rate=0.0",
     ],
     deps = [
+        ":parallel_gripper_controller",
+        ":point_source_force_field",
+        ":suction_cup_controller",
         "//geometry:drake_visualizer",
         "//geometry:scene_graph",
         "//multibody/parsing",
@@ -26,6 +76,14 @@ drake_cc_binary(
         "//systems/analysis:simulator",
         "//systems/framework:diagram",
         "@gflags",
+    ],
+)
+
+drake_cc_googletest(
+    name = "point_source_force_field_test",
+    deps = [
+        ":point_source_force_field",
+        "//common/test_utilities:eigen_matrix_compare",
     ],
 )
 

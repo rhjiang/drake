@@ -13,6 +13,7 @@
 #include "drake/common/drake_copyable.h"
 #include "drake/common/hash.h"
 #include "drake/common/pointer_cast.h"
+#include "drake/common/string_map.h"
 #include "drake/systems/framework/diagram.h"
 #include "drake/systems/framework/system.h"
 
@@ -307,8 +308,7 @@ class DiagramBuilder {
   /// @see GetSubsystemByName()
   template <template <typename> class MySystem>
   const MySystem<T>& GetDowncastSubsystemByName(std::string_view name) const {
-    const System<T>& subsystem = this->GetSubsystemByName(name);
-    return *dynamic_pointer_cast_or_throw<const MySystem<T>>(&subsystem);
+    return GetDowncastSubsystemByName<MySystem<T>>(name);
   }
 
   /// Retrieves a mutable reference to the subsystem with name @p name returned
@@ -319,9 +319,37 @@ class DiagramBuilder {
   /// @see GetMutableSubsystemByName()
   template <template <typename> class MySystem>
   MySystem<T>& GetMutableDowncastSubsystemByName(std::string_view name) {
-    System<T>& subsystem = this->GetMutableSubsystemByName(name);
-    return *dynamic_pointer_cast_or_throw<MySystem<T>>(&subsystem);
+    return GetMutableDowncastSubsystemByName<MySystem<T>>(name);
   }
+
+#ifndef DRAKE_DOXYGEN_CXX
+  // We're omitting this from doxygen as the details are unhelpful.
+
+  // Variants of Get[Mutable]DowncastSubsystemByName that allow for leaf
+  // systems that are not templatized.
+  // The requested LeafSystem must still have the same underlying scalar type
+  // as this builder.
+  template <class MyUntemplatizedSystem>
+  const MyUntemplatizedSystem& GetDowncastSubsystemByName(
+      std::string_view name) const {
+    static_assert(std::is_same_v<typename MyUntemplatizedSystem::Scalar, T>,
+                  "Scalar type of untemplatized System doesn't match the "
+                  "DiagramBuilder's.");
+    const System<T>& subsystem = this->GetSubsystemByName(name);
+    return *dynamic_pointer_cast_or_throw<const MyUntemplatizedSystem>(
+        &subsystem);
+  }
+
+  template <class MyUntemplatizedSystem>
+  MyUntemplatizedSystem& GetMutableDowncastSubsystemByName(
+      std::string_view name) {
+    static_assert(std::is_same_v<typename MyUntemplatizedSystem::Scalar, T>,
+                  "Scalar type of untemplatized System doesn't match the "
+                  "DiagramBuilder's.");
+    System<T>& subsystem = this->GetMutableSubsystemByName(name);
+    return *dynamic_pointer_cast_or_throw<MyUntemplatizedSystem>(&subsystem);
+  }
+#endif
 
   /// (Advanced) Returns a reference to the map of connections between Systems.
   /// The reference becomes invalid upon any call to Build or BuildInto.
@@ -338,6 +366,8 @@ class DiagramBuilder {
 
   /// Declares that sole input port on the @p dest system is connected to sole
   /// output port on the @p src system.
+  /// This function ignores deprecated ports, unless there is only one port in
+  /// which case it will use the deprecated port.
   /// @note The connection created between @p src and @p dest via a call to
   /// this method can be effectively overridden by any subsequent call to
   /// InputPort::FixValue(). That is, calling InputPort::FixValue() on an
@@ -376,7 +406,7 @@ class DiagramBuilder {
   /// previously built via ExportInput().
   /// @post @p input is connected to the indicated Diagram input port.
   void ConnectInput(
-      const std::string& diagram_port_name, const InputPort<T>& input);
+      std::string_view diagram_port_name, const InputPort<T>& input);
 
   /// Connects an input to the entire Diagram, indicated by @p
   /// diagram_port_index, to the given @p input port of a constituent system.
@@ -428,6 +458,14 @@ class DiagramBuilder {
   /// Returns true iff the given input @p port of a constituent system is either
   /// connected to another constituent system or exported as a diagram input.
   bool IsConnectedOrExported(const InputPort<T>& port) const;
+
+  /// Returns the current number of diagram input ports. The count may change
+  /// as more ports are exported.
+  int num_input_ports() const;
+
+  /// Returns the current number of diagram output outputs. The count may change
+  /// as more ports are exported.
+  int num_output_ports() const;
 
  private:
   // Declares a new input to the entire Diagram, using @p model_input to
@@ -484,7 +522,7 @@ class DiagramBuilder {
   std::vector<ExportedInputData> diagram_input_data_;
 
   // The InputPort fan-out API requires name lookup in some cases.
-  std::map<std::string, InputPortIndex> diagram_input_indices_;
+  string_map<InputPortIndex> diagram_input_indices_;
 
   // A map from the input ports of constituent systems, to the output ports of
   // the systems from which they get their values.

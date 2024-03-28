@@ -8,9 +8,6 @@ namespace render_gltf_client {
 /** @defgroup render_engine_gltf_client_server_api glTF Render Client-Server API
     @ingroup render_engines
 
-@warning This feature is currently in "beta testing" and may change without any
-deprecation notice ahead of time.
-
 <h2 id="overview">Overview</h2>
 
 Drake offers built-in renderers (RenderEngineVtk, RenderEngineGl), but in some
@@ -63,7 +60,9 @@ which the client will issue a [`POST` request][html_post] with an
 from the client will include uploading the scene file, in addition to a variety
 of other metadata attributes related to the image being rendered (such as
 `width` and `height`), as well as the full specification of the
-systems::sensors::CameraInfo intrinsics being rendered.
+systems::sensors::CameraInfo intrinsics being rendered.  The scene file must
+use the glTF 2.0 file format and must only use embedded assets (with `data:`
+URIs). A future version of this protocol might allow for non-embedded assets.
 
 The server is **expected to block** (delay sending a response) until it is ready
 to transmit the final rendered image back to the client.  This provides for an

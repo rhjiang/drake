@@ -48,7 +48,7 @@ bool CheckAttributes(const MathematicalProgram& prog,
     }
     return false;
   }
-  if (required_capabilities.count(ProgramAttribute::kQuadraticCost) == 0) {
+  if (!required_capabilities.contains(ProgramAttribute::kQuadraticCost)) {
     if (explanation) {
       *explanation =
           "OsqpSolver is unable to solve because a QuadraticCost is required"
@@ -60,7 +60,7 @@ bool CheckAttributes(const MathematicalProgram& prog,
     return false;
   }
   const Binding<QuadraticCost>* nonconvex_quadratic_cost =
-      FindNonconvexQuadraticCost(prog.quadratic_costs());
+      internal::FindNonconvexQuadraticCost(prog.quadratic_costs());
   if (nonconvex_quadratic_cost != nullptr) {
     if (explanation) {
       *explanation =

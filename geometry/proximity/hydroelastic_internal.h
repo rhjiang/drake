@@ -3,6 +3,7 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 
@@ -143,8 +144,9 @@ class SoftGeometry {
    this will throw if is_half_space() returns `true`.  */
   const VolumeMeshFieldLinear<double, double>& pressure_field() const {
     if (is_half_space()) {
-      throw std::runtime_error("SoftGeometry::pressure_field() cannot be "
-                               "invoked for soft half space");
+      throw std::runtime_error(
+          "SoftGeometry::pressure_field() cannot be "
+          "invoked for soft half space");
     }
     return std::get<SoftMesh>(geometry_).pressure();
   }
@@ -184,8 +186,7 @@ class RigidMesh {
 
   explicit RigidMesh(std::unique_ptr<TriangleSurfaceMesh<double>> mesh)
       : mesh_(std::move(mesh)),
-        bvh_(std::make_unique<Bvh<Obb, TriangleSurfaceMesh<double>>>(
-            *mesh_)) {}
+        bvh_(std::make_unique<Bvh<Obb, TriangleSurfaceMesh<double>>>(*mesh_)) {}
 
   DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(RigidMesh)
 
@@ -282,7 +283,7 @@ class Geometries final : public ShapeReifier {
    following invariants should always hold:
 
      - If HydroelasticType::kUndefined is returned, there is no representation
-       for that id.
+       for that id. See also is_vanished().
      - If HydroelasticType::kRigid is returned, there is a rigid geometry
        associated with that id and calling rigid_geometry() will return a
        valid RigidGeometry.
@@ -290,6 +291,13 @@ class Geometries final : public ShapeReifier {
        associated with that id and calling soft_geometry() will return a valid
        SoftGeometry.  */
   HydroelasticType hydroelastic_type(GeometryId id) const;
+
+  /* Returns true iff the hydroelastic representation of this geometry has been
+   marked vanished. Geometries that will be marked as vanished are finite
+   primitives for which gradients could not be computed. This excludes:
+   HalfSpace (as not being finite) and Mesh and Convex (as not being
+   primitive). */
+  bool is_vanished(GeometryId id) const;
 
   /* Returns the representation of the soft geometry with the given `id`.
    @pre hydroelastic_type(id) returns HydroelasticType::kSoft.  */
@@ -364,6 +372,9 @@ class Geometries final : public ShapeReifier {
 
   // The representations of all rigid geometries.
   std::unordered_map<GeometryId, RigidGeometry> rigid_geometries_;
+
+  // The registrations of all vanished geometries.
+  std::unordered_set<GeometryId> vanished_geometries_;
 };
 
 /* @name Creating hydroelastic representations of shapes
@@ -385,7 +396,7 @@ std::optional<RigidGeometry> MakeRigidRepresentation(
       "Rigid {} shapes are not currently supported for hydroelastic "
       "contact; registration is allowed, but an error will be thrown "
       "during contact.",
-      ShapeName(shape));
+      shape.type_name());
   return {};
 }
 
@@ -437,7 +448,7 @@ std::optional<SoftGeometry> MakeSoftRepresentation(const Shape& shape,
   static const logging::Warn log_once(
       "Soft {} shapes are not currently supported for hydroelastic contact; "
       "registration is allowed, but an error will be thrown during contact.",
-      ShapeName(shape));
+      shape.type_name());
   return {};
 }
 

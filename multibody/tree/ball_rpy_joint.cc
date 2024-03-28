@@ -26,7 +26,7 @@ std::unique_ptr<Joint<ToScalar>> BallRpyJoint<T>::TemplatedDoCloneToScalar(
   // Make the Joint<T> clone.
   auto joint_clone = std::make_unique<BallRpyJoint<ToScalar>>(
       this->name(), frame_on_parent_body_clone, frame_on_child_body_clone,
-      this->damping());
+      this->default_damping());
   joint_clone->set_position_limits(this->position_lower_limits(),
                                    this->position_upper_limits());
   joint_clone->set_velocity_limits(this->velocity_lower_limits(),
@@ -63,10 +63,10 @@ template <typename T>
 std::unique_ptr<typename Joint<T>::BluePrint>
 BallRpyJoint<T>::MakeImplementationBlueprint() const {
   auto blue_print = std::make_unique<typename Joint<T>::BluePrint>();
-  auto ballrpy_mobilizer = std::make_unique<internal::SpaceXYZMobilizer<T>>(
+  auto ballrpy_mobilizer = std::make_unique<internal::RpyBallMobilizer<T>>(
       this->frame_on_parent(), this->frame_on_child());
   ballrpy_mobilizer->set_default_position(this->default_positions());
-  blue_print->mobilizers_.push_back(std::move(ballrpy_mobilizer));
+  blue_print->mobilizer = std::move(ballrpy_mobilizer);
   return blue_print;
 }
 

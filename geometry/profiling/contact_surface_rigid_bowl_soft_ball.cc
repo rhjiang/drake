@@ -48,9 +48,9 @@ namespace contact_surface {
 
 using Eigen::Vector3d;
 using Eigen::Vector4d;
+using geometry::AddCompliantHydroelasticProperties;
 using geometry::AddContactMaterial;
 using geometry::AddRigidHydroelasticProperties;
-using geometry::AddCompliantHydroelasticProperties;
 using geometry::Box;
 using geometry::Capsule;
 using geometry::ContactSurface;
@@ -278,10 +278,16 @@ class ContactResultMaker final : public LeafSystem<double> {
       const ContactSurface<double>& surface = contacts[i];
 
       // TODO(SeanCurtis-TRI): This currently skips the full naming and doesn't
-      //  report any dynamics (e.g., force, moment, or quadrature data).
+      //  report quadrature data.
 
       surface_message.body1_name = "Id_" + to_string(surface.id_M());
       surface_message.body2_name = "Id_" + to_string(surface.id_N());
+
+      EigenMapView(surface_message.centroid_W) = surface.centroid();
+      const Vector3d fake_force{1e-2, 0, 0};
+      EigenMapView(surface_message.force_C_W) = fake_force;
+      const Vector3d moment{0, 0, 0};
+      EigenMapView(surface_message.moment_C_W) = moment;
 
       const int num_vertices = surface.num_vertices();
       surface_message.num_vertices = num_vertices;

@@ -49,13 +49,13 @@ asyncio.sleep = _patch_asyncio(_asyncio_sleep)
 #
 # TODO(mwoehlke-kitware): Remove this when Jammy's python3-u-msgpack has been
 # updated to 2.5.2 or later.
-if sys.version_info[:2] >= (3, 10) and not hasattr(umsgpack, 'Hashable'):
+if not hasattr(umsgpack, 'Hashable'):
     import collections
     setattr(umsgpack.collections, 'Hashable', collections.abc.Hashable)
 
 
 def print_recursive_comparison(d1, d2, level='root'):
-    if type(d1) != type(d2):
+    if type(d1) is not type(d2):
         print(f"{level:<20} Type mismatch")
         print(f"{level:<20}    {type(d1)}: {repr(d1)}")
         print(f"{level:<20}    {type(d2)}: {repr(d2)}")

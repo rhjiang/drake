@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-#include <drake_vendor/fcl/fcl.h>
+#include <fcl/fcl.h>
 #include <fmt/ostream.h>
 #include <gtest/gtest.h>
 
@@ -69,8 +69,19 @@ class ProximityEngineTester {
 
   template <typename T>
   static bool IsFclConvexType(const ProximityEngine<T>& engine,
-                                 GeometryId id) {
+                              GeometryId id) {
     return engine.IsFclConvexType(id);
+  }
+
+  template <typename T>
+  static const fcl::CollisionObjectd* GetCollisionObject(
+      const ProximityEngine<T>& engine, GeometryId id) {
+    void* erase_ptr = engine.GetCollisionObject(id);
+    if (erase_ptr != nullptr) {
+      // API promises that this is a safe cast.
+      return static_cast<const fcl::CollisionObjectd*>(erase_ptr);
+    }
+    return nullptr;
   }
 
   template <typename T>
@@ -94,6 +105,10 @@ class GeometriesTester {
   static const RigidGeometry& get_rigid_geometry(const Geometries& geometries,
                                                  GeometryId id) {
     return geometries.rigid_geometries_.at(id);
+  }
+
+  static void disable_rigid_geometry_deferral(Geometries* geometries) {
+    geometries->enable_rigid_geometries_pending_ = false;
   }
 };
 
@@ -161,7 +176,7 @@ GTEST_TEST(ProximityEngineTests, ProcessHydroelasticProperties) {
     const GeometryId sphere_id = GeometryId::get_new_id();
     engine.AddDynamicGeometry(sphere, {}, sphere_id, soft_properties);
     EXPECT_EQ(ProximityEngineTester::hydroelastic_type(sphere_id, engine),
-              HydroelasticType::kSoft);
+              HydroelasticType::kCompliant);
   }
 
   // Case: rigid cylinder.
@@ -228,7 +243,29 @@ GTEST_TEST(ProximityEngineTests, ProcessHydroelasticProperties) {
     const GeometryId mesh_id = GeometryId::get_new_id();
     engine.AddDynamicGeometry(mesh, {}, mesh_id, soft_properties);
     EXPECT_EQ(ProximityEngineTester::hydroelastic_type(mesh_id, engine),
-              HydroelasticType::kSoft);
+              HydroelasticType::kCompliant);
+  }
+
+  // Case: rigid mesh vtk.
+  {
+    Mesh mesh{
+        drake::FindResourceOrThrow("drake/geometry/test/non_convex_mesh.vtk"),
+        1.0 /* scale */};
+    const GeometryId mesh_id = GeometryId::get_new_id();
+    engine.AddDynamicGeometry(mesh, {}, mesh_id, rigid_properties);
+    EXPECT_EQ(ProximityEngineTester::hydroelastic_type(mesh_id, engine),
+              HydroelasticType::kRigid);
+  }
+
+  // Case: compliant convex vtk.
+  {
+    Convex convex{
+        drake::FindResourceOrThrow("drake/geometry/test/non_convex_mesh.vtk"),
+        1.0};
+    const GeometryId convex_id = GeometryId::get_new_id();
+    engine.AddDynamicGeometry(convex, {}, convex_id, soft_properties);
+    EXPECT_EQ(ProximityEngineTester::hydroelastic_type(convex_id, engine),
+              HydroelasticType::kCompliant);
   }
 
   // Case: rigid convex.
@@ -240,6 +277,49 @@ GTEST_TEST(ProximityEngineTests, ProcessHydroelasticProperties) {
     engine.AddDynamicGeometry(convex, {}, convex_id, rigid_properties);
     EXPECT_EQ(ProximityEngineTester::hydroelastic_type(convex_id, engine),
               HydroelasticType::kRigid);
+  }
+
+  // Case: rigid convex vtk.
+  {
+    Convex convex{
+        drake::FindResourceOrThrow("drake/geometry/test/one_tetrahedron.vtk"),
+        edge_length};
+    const GeometryId convex_id = GeometryId::get_new_id();
+    engine.AddDynamicGeometry(convex, {}, convex_id, rigid_properties);
+    EXPECT_EQ(ProximityEngineTester::hydroelastic_type(convex_id, engine),
+              HydroelasticType::kRigid);
+  }
+}
+
+// Test a combination that used to throw an exception.
+GTEST_TEST(ProximityEngineTests, ProcessVtkMeshUndefHydro) {
+  ProximityEngine<double> engine;
+
+  // Case: mesh vtk, no hydro type annotation.
+  {
+    Mesh mesh{
+        drake::FindResourceOrThrow("drake/geometry/test/non_convex_mesh.vtk"),
+        1.0 /* scale */};
+    const GeometryId mesh_id = GeometryId::get_new_id();
+    engine.AddDynamicGeometry(mesh, {}, mesh_id, ProximityProperties());
+    EXPECT_EQ(ProximityEngineTester::hydroelastic_type(mesh_id, engine),
+              HydroelasticType::kUndefined);
+  }
+}
+
+// Test a combination that used to throw an exception.
+GTEST_TEST(ProximityEngineTests, ProcessVtkConvexUndefHydro) {
+  ProximityEngine<double> engine;
+
+  // Case: convex vtk, no hydro type annotation.
+  {
+    Convex convex{
+        drake::FindResourceOrThrow("drake/geometry/test/one_tetrahedron.vtk"),
+        1.0 /* scale */};
+    const GeometryId convex_id = GeometryId::get_new_id();
+    engine.AddDynamicGeometry(convex, {}, convex_id, ProximityProperties());
+    EXPECT_EQ(ProximityEngineTester::hydroelastic_type(convex_id, engine),
+              HydroelasticType::kUndefined);
   }
 }
 
@@ -358,125 +438,6 @@ GTEST_TEST(ProximityEngineTest, ComputeContactSurfacesAutodiffSupport) {
   }
 }
 
-// Meshes are treated specially in proximity engine. Proximity queries on
-// non-convex meshes are not yet supported. A Mesh specification is treated
-// implicitly as the convex hull of the mesh. This is implemented by
-// instantiating an "invalid" fcl::Convex (see
-// ProximityEngine::Impl::ImplementGeometry(Mesh) for details). For test
-// purposes, we'll confirm that the associated fcl object *is* a Convex
-// shape. Furthermore, we'll use a regression test to confirm the expected
-// behavior, to wit:
-//
-//   - A concave mesh queries penetration and distance like its convex hull.
-//   - A concave mesh queries hydroelastic based on the actual mesh.
-//
-// The test doesn't depend on the mesh representation type.
-GTEST_TEST(ProximityEngineTests, MeshSupportAsConvex) {
-  /* This mesh looks like this:
-                         +z
-           -2     -1     ┆     +1    +2
-    +0.5 ┈┈┈┏━━━━━━┓┉┉┉┉┉┼┉┉┉┉┉┏━━━━━━┓
-            ┃░░░░░░┃▒▒▒▒▒┆▒▒▒▒▒┃░░░░░░┃
-     ┄┄┄┄┄┄┄╂┄┄┄┄┄┄╂┄┄┄┄┄┼┄┄┄┄┄╂┄┄┄┄┄┄╂┄┄┄┄┄┄ +x
-            ┃░░░░░░┃▒▒▒▒▒┆▒▒▒▒▒┃░░░░░░┃
-     -0.5 ┈┈┃░░░░░░┗━━━━━P━━━━━┛░░░░░░┃    ━━ - Surface of concave geometry.
-            ┃░░░░░░░░░░░░┆░░░░░░░░░░░░┃    ░░ - Interior of concave geometry.
-            ┃░░░░░░░░░░░░┆░░░░░░░░░░░░┃    ▒▒ - Inside convex hull, outside
-            ┃░░░░░░░░░░░░┆░░░░░░░░░░░░┃         concave geometry.
-      -2 ┈┈┈┗━━━━━━━━━━━━┿━━━━━━━━━━━━┛
-                         ┆
-
-    - We'll place a sphere at the origin with radius R.
-    - The nearest point to the sphere on the *concave* geometry is shown as
-      point P. Its distance is 0.5 - R.
-    - The signed distance to the *convex region* will be -(0.5 + R).
-    - If R < 0.5, there is *no* hydroelastic contact surface.
-    - if R > 0.5, there will be one.
-  */
-  /* Because we're using the general convexity algorithm for distance and
-   penetration, we'll lose a great deal of precision in the answer. Empirically,
-   for this test case, even sqrt(eps) was insufficient. This value appears to
-   be sufficient. In some cases, an eps as small as 2e-7 was sufficient. But
-   for the most inaccurate test (slightly seaprated with large sphere), the
-   error was as larage as 2e-5. */
-  constexpr double kEps = 2e-5;
-
-  for (double radius : {0.25, 0.75}) {
-    ProximityEngine<double> engine;
-    // The actual non-convex mesh. Used in all queries.
-    const Mesh mesh{
-        drake::FindResourceOrThrow("drake/geometry/test/extruded_u.obj"),
-        1.0 /* scale */};
-    const auto& [mesh_id, X_WM] =
-        AddShape(&engine, mesh, true /* is_anchored */, false /* is_soft */,
-                 Vector3d::Zero());
-    ASSERT_TRUE(ProximityEngineTester::IsFclConvexType(engine, mesh_id));
-    const auto& [sphere_id, X_MS] =
-        AddShape(&engine, Sphere(radius), false /* is_anchored */,
-                 true /* is soft */, Vector3d::Zero());
-    unordered_map<GeometryId, RigidTransformd> X_WGs{{mesh_id, X_WM},
-                                                     {sphere_id, X_WM * X_MS}};
-    engine.UpdateWorldPoses(X_WGs);
-
-    // Existence of a contact surface depends on the radius of the sphere.
-    const auto contact_surfaces = engine.ComputeContactSurfaces(
-        HydroelasticContactRepresentation::kTriangle, X_WGs);
-    EXPECT_EQ(contact_surfaces.size(), radius > 0.5 ? 1 : 0);
-
-    {
-      // Perform the queries with the sphere at the origin; it lies inside the
-      // convex hull giving negative signed distance and non-zero penetration
-      // depth.
-      const auto signed_distance_pairs =
-          engine.ComputeSignedDistancePairwiseClosestPoints(X_WGs, kInf);
-      ASSERT_EQ(signed_distance_pairs.size(), 1);
-      EXPECT_NEAR(signed_distance_pairs[0].distance, -(0.5 + radius), kEps);
-
-      const auto point_pairs = engine.ComputePointPairPenetration(X_WGs);
-      ASSERT_EQ(1, point_pairs.size());
-      EXPECT_NEAR(point_pairs[0].depth, 0.5 + radius, kEps);
-
-      const auto candidates = engine.FindCollisionCandidates();
-      ASSERT_EQ(1, candidates.size());
-
-      EXPECT_TRUE(engine.HasCollisions());
-    }
-
-    {
-      // Move the sphere slightly outside the convex hull. We should get
-      // slightly positive signed distance and no penetration.
-      constexpr double kDistance = 1e-3;
-      X_WGs[sphere_id] =
-          RigidTransformd(Vector3d(0, 0, 0.5 + radius + kDistance));
-      engine.UpdateWorldPoses(X_WGs);
-
-      const auto signed_distance_pairs =
-          engine.ComputeSignedDistancePairwiseClosestPoints(X_WGs, kInf);
-      ASSERT_EQ(signed_distance_pairs.size(), 1);
-      EXPECT_NEAR(signed_distance_pairs[0].distance, kDistance, kEps);
-
-      const auto point_pairs = engine.ComputePointPairPenetration(X_WGs);
-      ASSERT_EQ(0, point_pairs.size());
-
-      const auto candidates = engine.FindCollisionCandidates();
-      ASSERT_EQ(0, candidates.size());
-
-      EXPECT_FALSE(engine.HasCollisions());
-    }
-  }
-}
-
-// Tests that passing VTK file in Mesh for Point contact will throw.
-GTEST_TEST(ProximityEngineTests, VtkForPointContactThrow) {
-  ProximityEngine<double> engine;
-  const Mesh vtk_mesh{
-      drake::FindResourceOrThrow("drake/geometry/test/non_convex_mesh.vtk")};
-  DRAKE_EXPECT_THROWS_MESSAGE(
-      engine.AddAnchoredGeometry(vtk_mesh, RigidTransformd::Identity(),
-                                 GeometryId::get_new_id()),
-      "ProximityEngine: expect an Obj file for non-hydroelastics but get.*");
-}
-
 // Tests simple addition of anchored geometry.
 GTEST_TEST(ProximityEngineTests, AddAnchoredGeometry) {
   ProximityEngine<double> engine;
@@ -576,7 +537,7 @@ GTEST_TEST(ProximityEngineTests, ReplaceProperties) {
   // representation, but is not necessarily sufficient to define one.
   ProximityProperties hydro_trigger;
   hydro_trigger.AddProperty(kHydroGroup, kComplianceType,
-                            HydroelasticType::kSoft);
+                            HydroelasticType::kCompliant);
 
   // Case: New properties request hydroelastic, but they are incomplete and
   // efforts to assign those properties throw.
@@ -684,8 +645,8 @@ GTEST_TEST(ProximityEngineTests, FailedParsing) {
         "The file parsed contains no objects;.+");
   }
 
-  // The file is not an OBJ.
-  { const std::filesystem::path file = temp_dir / "not_an_obj.txt";
+  // The file does not have OBJ contents..
+  { const std::filesystem::path file = temp_dir / "not_really_an_obj.obj";
     std::ofstream f(file.string());
     f << "I'm not a valid obj\n";
     f.close();
@@ -909,7 +870,8 @@ GTEST_TEST(ProximityEngineTests, SignedDistancePairClosestPoint) {
   {
     // I know the GeometrySet only has id_A and id_B, so I'll construct the
     // extracted set by hand.
-    auto extract_ids = [id_A, id_B](const GeometrySet&) {
+    auto extract_ids = [id_A, id_B](const GeometrySet&,
+                                    CollisionFilterScope) {
       return std::unordered_set<GeometryId>{id_A, id_B};
     };
     engine.collision_filter().Apply(
@@ -2460,7 +2422,8 @@ TEST_F(SimplePenetrationTest, WithCollisionFilters) {
 
   // I know the GeometrySet only has id_A and id_B, so I'll construct the
   // extracted set by hand.
-  auto extract_ids = [origin_id, collide_id](const GeometrySet&) {
+  auto extract_ids = [origin_id, collide_id](const GeometrySet&,
+                                             CollisionFilterScope) {
     return std::unordered_set<GeometryId>{origin_id, collide_id};
   };
   engine_.collision_filter().Apply(CollisionFilterDeclaration().ExcludeWithin(
@@ -4368,6 +4331,13 @@ class ProximityEngineDeformableContactTest : public testing::Test {
  protected:
   static constexpr double kSphereRadius = 1.0;
 
+  ProximityEngineDeformableContactTest() {
+    const internal::deformable::Geometries& geometries =
+        deformable_contact_geometries();
+    internal::deformable::GeometriesTester::disable_rigid_geometry_deferral(
+        const_cast<internal::deformable::Geometries*>(&geometries));
+  }
+
   ProximityProperties MakeProximityPropsWithRezHint(double resolution_hint) {
     ProximityProperties props;
     props.AddProperty(internal::kHydroGroup, internal::kRezHint,
@@ -4722,6 +4692,85 @@ TEST_F(ProximityEngineDeformableContactTest, ComputeDeformableContact) {
   contact_surface = contact_data.contact_surfaces()[0];
   EXPECT_EQ(contact_surface.id_A(), deformable_id);
   EXPECT_EQ(contact_surface.id_B(), rigid_id);
+}
+
+GTEST_TEST(ProximityEngineTests, NeedsConvexHull) {
+  ProximityEngine<double> engine;
+
+  const SourceId s_id = SourceId::get_new_id();
+  const FrameId f_id = FrameId::get_new_id();
+  const GeometryId g_id = GeometryId::get_new_id();
+
+  // Shapes that don't require convex hulls.
+  vector<std::unique_ptr<Shape>> unsupported_shapes;
+  unsupported_shapes.push_back(make_unique<Box>(1, 1, 1));
+  unsupported_shapes.push_back(make_unique<Capsule>(1, 1));
+  unsupported_shapes.push_back(make_unique<Cylinder>(1, 1));
+  unsupported_shapes.push_back(make_unique<Ellipsoid>(1, 2, 3));
+  unsupported_shapes.push_back(make_unique<HalfSpace>());
+  unsupported_shapes.push_back(make_unique<MeshcatCone>(1));
+  unsupported_shapes.push_back(make_unique<Sphere>(1));
+  for (std::unique_ptr<Shape>& shape : unsupported_shapes) {
+    InternalGeometry geo(s_id, std::move(shape), f_id, g_id, "n", {});
+    EXPECT_FALSE(engine.NeedsConvexHull(geo));
+  }
+
+  // Rigid shapes that *do* require convex hulls.
+  EXPECT_TRUE(engine.NeedsConvexHull(InternalGeometry(
+      s_id, make_unique<Mesh>("unimportant", 1.0), f_id, g_id, "n", {})));
+  EXPECT_TRUE(engine.NeedsConvexHull(InternalGeometry(
+      s_id, make_unique<Convex>("unimportant", 1.0), f_id, g_id, "n", {})));
+
+  // Being deformable would eliminate the need for a convex hull.
+  EXPECT_FALSE(engine.NeedsConvexHull(InternalGeometry(
+      s_id,
+      make_unique<Mesh>(
+          FindResourceOrThrow("drake/geometry/test/one_tetrahedron.vtk"), 1),
+      f_id, g_id, "n", {}, 1.0)));
+}
+
+// ProximityEngine creates fcl::Convexd for all Mesh and Convex. For Convex,
+// it's part of the contract. For Mesh, it is the current handicapped
+// implementation.
+//
+// This confirms that the input mesh is ignored in favor of the convex hull
+// provided to ProximityEngine.
+GTEST_TEST(ProximityEngineTests, ImplementedAsFclConvex) {
+  ProximityEngine<double> engine;
+
+  // This mesh has 8 small wedges jammed into the corners of a cube 2-units on
+  // the side, centered on the origin. It is decidedly non-convex.
+  // In collision queries, it should respond like a solid cube.
+  const std::string obj_path =
+      FindResourceOrThrow("drake/geometry/test/cube_corners.obj");
+
+  auto expect_fcl_convex_is_cube = [&engine](GeometryId id) {
+    const fcl::CollisionObjectd* object =
+        ProximityEngineTester::GetCollisionObject(engine, id);
+    DRAKE_DEMAND(object != nullptr);
+    ASSERT_EQ(object->getNodeType(), fcl::GEOM_CONVEX);
+    const fcl::Convexd* fcl_shape =
+        dynamic_cast<const fcl::Convexd*>(object->collisionGeometry().get());
+    DRAKE_DEMAND(fcl_shape != nullptr);
+    // We get the tet's 4 vertices and 4 faces.
+    EXPECT_EQ(fcl_shape->getVertices().size(), 8);
+    EXPECT_EQ(fcl_shape->getFaceCount(), 6);
+  };
+
+  {
+    SCOPED_TRACE("Mesh as fcl::Convexd");
+    const GeometryId id = GeometryId::get_new_id();
+    engine.AddAnchoredGeometry(Mesh(obj_path), {}, id, {});
+
+    expect_fcl_convex_is_cube(id);
+  }
+  {
+    SCOPED_TRACE("Convex as fcl::Convexd");
+    const GeometryId id = GeometryId::get_new_id();
+    engine.AddAnchoredGeometry(Convex(obj_path), {}, id, {});
+
+    expect_fcl_convex_is_cube(id);
+  }
 }
 
 }  // namespace

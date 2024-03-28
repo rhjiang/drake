@@ -1,18 +1,18 @@
 load(
-    "@drake//tools/skylark:drake_cc.bzl",
+    "//tools/skylark:drake_cc.bzl",
     "drake_cc_binary",
     "drake_cc_googletest",
     "drake_cc_library",
     "drake_cc_package_library",
 )
 load(
-    "@drake//tools/skylark:drake_py.bzl",
+    "//tools/skylark:drake_py.bzl",
     "drake_py_library",
     "drake_py_unittest",
 )
-load("@drake//tools/install:install.bzl", "install_files")
+load("//tools/install:install.bzl", "install_files")
 load("//tools/lint:lint.bzl", "add_lint_tests")
-load("@drake//tools/workspace:forward_files.bzl", "forward_files")
+load("//tools/workspace:forward_files.bzl", "forward_files")
 load(
     "//tools/workspace/dm_control_internal:files.bzl",
     "dm_control_mujoco_files",
@@ -39,6 +39,7 @@ _DM_CONTROL_MUJOCO_FILES = forward_files(
     srcs = ["@dm_control_internal//:" + x for x in dm_control_mujoco_files()],
     dest_prefix = "",
     strip_prefix = "@dm_control_internal//:",
+    tags = ["manual"],
     visibility = ["//visibility:private"],
 )
 
@@ -46,6 +47,7 @@ drake_cc_package_library(
     name = "parsing",
     visibility = ["//visibility:public"],
     deps = [
+        ":collision_filter_groups",
         ":model_directives",
         ":model_instance_info",
         ":package_map",
@@ -65,8 +67,14 @@ genrule(
 
 drake_cc_library(
     name = "package_map",
-    srcs = ["package_map.cc"],
-    hdrs = ["package_map.h"],
+    srcs = [
+        "detail_path_utils.cc",
+        "package_map.cc",
+    ],
+    hdrs = [
+        "detail_path_utils.h",
+        "package_map.h",
+    ],
     data = [
         ":drake_models.json",
         ":package_downloader.py",
@@ -79,17 +87,28 @@ drake_cc_library(
         "//common:name_value",
     ],
     deps = [
+        "//common:diagnostic_policy",
         "//common:find_cache",
         "//common:find_resource",
         "//common:find_runfiles",
         "//common:network_policy",
         "//common:scope_exit",
+        "//common:sha256",
         "//common/yaml",
-        "@picosha2",
         "@tinyxml2_internal//:tinyxml2",
     ],
 )
 
+drake_cc_library(
+    name = "collision_filter_groups",
+    srcs = ["collision_filter_groups.cc"],
+    hdrs = ["collision_filter_groups.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//common:essential",
+        "//common:sorted_pair",
+    ],
+)
 # For simplicity in dependency management (e.g., prevent exposing `sdformat`),
 # we make all `detail_*` libraries private. For more info, see #7451.
 
@@ -99,7 +118,6 @@ drake_cc_library(
         "detail_collision_filter_group_resolver.cc",
         "detail_common.cc",
         "detail_ignition.cc",
-        "detail_path_utils.cc",
         "detail_tinyxml.cc",
         "detail_tinyxml2_diagnostic.cc",
     ],
@@ -107,13 +125,14 @@ drake_cc_library(
         "detail_collision_filter_group_resolver.h",
         "detail_common.h",
         "detail_ignition.h",
-        "detail_path_utils.h",
+        "detail_strongly_connected_components.h",
         "detail_tinyxml.h",
         "detail_tinyxml2_diagnostic.h",
     ],
     internal = True,
     visibility = ["//visibility:private"],
     deps = [
+        ":collision_filter_groups",
         ":package_map",
         "//common:diagnostic_policy",
         "//common:essential",
@@ -139,7 +158,7 @@ drake_cc_library(
         "//multibody/plant",
         "//multibody/tree:geometry_spatial_inertia",
         "@fmt",
-        "@tinyobjloader",
+        "@tinyobjloader_internal//:tinyobjloader",
     ],
 )
 
@@ -220,6 +239,40 @@ drake_cc_library(
         "@fmt",
         "@tinyxml2_internal//:tinyxml2",
     ],
+)
+
+drake_cc_library(
+    name = "detail_usd_parser",
+    srcs = select({
+        "//tools:with_usd": [
+            "detail_usd_parser.cc",
+        ],
+        "//conditions:default": [
+            "detail_usd_parser_off.cc",
+        ],
+    }),
+    hdrs = ["detail_usd_parser.h"],
+    copts = [
+        # TODO(jwnimmer-tri) OpenUSD has a gargantuan number of warnings.
+        # We should really try to patch it to fix most/all of them.
+        "-w",
+    ],
+    internal = True,
+    visibility = ["//visibility:private"],
+    interface_deps = [
+        ":detail_misc",
+        ":detail_parsing_workspace",
+        "//multibody/plant",
+    ],
+    deps = [
+        "//common:find_runfiles",
+        "//common:unused",
+    ] + select({
+        "//tools:with_usd": [
+            "@openusd_internal//:openusd",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 drake_cc_library(
@@ -314,6 +367,7 @@ drake_cc_library(
     ],
     visibility = ["//visibility:public"],
     interface_deps = [
+        ":collision_filter_groups",
         ":package_map",
         "//common:diagnostic_policy",
         "//multibody/plant",
@@ -455,11 +509,13 @@ drake_cc_googletest(
     name = "process_model_directives_test",
     data = [
         ":process_model_directives_test_models",
+        "//manipulation/util:panda_arm_and_hand_test_model",
         "//multibody/benchmarks/acrobot:models",
     ],
     deps = [
         ":process_model_directives",
         "//common/test_utilities",
+        "//common/yaml",
     ],
 )
 
@@ -528,6 +584,7 @@ drake_cc_googletest(
         "//multibody/benchmarks/acrobot:models",
     ],
     deps = [
+        ":detail_mujoco_parser",
         ":detail_sdf_parser",
         "//common:find_resource",
         "//common/test_utilities",
@@ -564,6 +621,9 @@ drake_cc_googletest(
         "//common/test_utilities:diagnostic_policy_test_base",
         "//common/test_utilities:eigen_matrix_compare",
         "//common/test_utilities:expect_throws_message",
+        "//common/test_utilities:maybe_pause_for_user",
+        "//geometry/test_utilities:meshcat_environment",
+        "//visualization",
     ],
 )
 
@@ -635,8 +695,8 @@ drake_cc_googletest(
         "//common:find_cache",
         "//common:find_resource",
         "//common:scope_exit",
+        "//common:sha256",
         "//common/test_utilities:expect_throws_message",
-        "@picosha2",
     ],
 )
 
@@ -653,6 +713,13 @@ drake_cc_googletest(
 )
 
 drake_cc_googletest(
+    name = "collision_filter_groups_test",
+    deps = [
+        ":collision_filter_groups",
+    ],
+)
+
+drake_cc_googletest(
     name = "detail_path_utils_test",
     data = [
         ":test_models",
@@ -660,6 +727,13 @@ drake_cc_googletest(
     deps = [
         ":detail_misc",
         "//common/test_utilities",
+    ],
+)
+
+drake_cc_googletest(
+    name = "detail_strongly_connected_components_test",
+    deps = [
+        ":detail_misc",
     ],
 )
 
@@ -688,6 +762,21 @@ drake_cc_googletest(
     ],
 )
 
+drake_cc_googletest(
+    name = "detail_usd_parser_test",
+    args = select({
+        "//tools:with_usd": [],
+        "//conditions:default": [
+            "--gtest_filter=-*",
+        ],
+    }),
+    deps = [
+        ":detail_usd_parser",
+        "//common/test_utilities:diagnostic_policy_test_base",
+        "//common/test_utilities:expect_throws_message",
+    ],
+)
+
 install_files(
     name = "install",
     dest = "share/drake/multibody/parsing",
@@ -698,4 +787,10 @@ install_files(
     visibility = ["//visibility:public"],
 )
 
-add_lint_tests()
+add_lint_tests(
+    cpplint_extra_srcs = [
+        "detail_usd_parser.cc",
+        "detail_usd_parser_off.cc",
+    ],
+    enable_clang_format_lint = False,
+)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -53,7 +54,7 @@ to the MultibodyTree once it is owned by %MultibodyTreeSystem. For example,
 @code{.cpp}
   // Create an empty model.
   auto mb_tree = std::make_unique<MultibodyTree<double>>
-  mb_tree->AddBody<RigidBody>(...);
+  mb_tree->AddRigidBody(...);
   mb_tree->AddMobilizer<RevoluteMobilizer>(...);
   // ...
   // Done adding modeling elements. Transfer tree to system, get Context.
@@ -146,6 +147,15 @@ class MultibodyTreeSystem : public systems::LeafSystem<T> {
       const systems::Context<T>& context) const {
     this->ValidateContext(context);
     return this->get_cache_entry(cache_indexes_.reflected_inertia)
+        .template Eval<VectorX<T>>(context);
+  }
+
+  /* Returns a reference to the up-to-date cache of per-dof joint damping
+  in the given Context, recalculating it first if necessary. */
+  const VectorX<T>& EvalJointDampingCache(
+      const systems::Context<T>& context) const {
+    this->ValidateContext(context);
+    return this->get_cache_entry(cache_indexes_.joint_damping)
         .template Eval<VectorX<T>>(context);
   }
 
@@ -296,7 +306,7 @@ class MultibodyTreeSystem : public systems::LeafSystem<T> {
   }
 
   /* Returns a mutable reference to the MultibodyTree owned by this class. */
-  MultibodyTree<T>& mutable_tree() const;
+  MultibodyTree<T>& mutable_tree();
 
   /* Finalize the tree if that hasn't already been done, complete System
   construction, and declare any needed Context resources for the tree. You must
@@ -328,6 +338,12 @@ class MultibodyTreeSystem : public systems::LeafSystem<T> {
   // a DoLeafSetDefaultState().
   void SetDefaultState(const systems::Context<T>& context,
                        systems::State<T>* state) const override;
+
+  // Override of LeafSystem::SetDefaultParameters. For all parameters declared
+  // by various MultibodyElement subclasses, sets numeric and abstract
+  // parameters to default values stored in their class members.
+  void SetDefaultParameters(const systems::Context<T>& context,
+                            systems::Parameters<T>* parameters) const final;
 
  private:
   // This is only meaningful in continuous mode.
@@ -385,6 +401,11 @@ class MultibodyTreeSystem : public systems::LeafSystem<T> {
   void CalcReflectedInertia(const systems::Context<T>& context,
                             VectorX<T>* reflected_inertia) const {
     internal_tree().CalcReflectedInertia(context, reflected_inertia);
+  }
+
+  void CalcJointDamping(const systems::Context<T>& context,
+                        VectorX<T>* joint_damping) const {
+    internal_tree().CalcJointDamping(context, joint_damping);
   }
 
   void CalcCompositeBodyInertiasInWorld(
@@ -503,6 +524,7 @@ class MultibodyTreeSystem : public systems::LeafSystem<T> {
     systems::CacheIndex spatial_acceleration_bias;
     systems::CacheIndex velocity_kinematics;
     systems::CacheIndex reflected_inertia;
+    systems::CacheIndex joint_damping;
   };
 
   // This is the one real constructor. From the public API, a null tree is
@@ -538,14 +560,17 @@ const MultibodyTree<T>& GetInternalTree(const MultibodyTreeSystem<T>& system) {
 
 namespace drake {
 namespace multibody {
-// Forward declaration of MultibodyElement for attorney-client.
+// Forward declarations for attorney-client.
 template <typename T>
 class MultibodyElement;
+template <typename T>
+class ForceDensityField;
 
 namespace internal {
 
-// Attorney to give access to MultibodyElement to a selection of protected
-// methods for declaring/accessing/mutating MultibodyTreeSystem parameters,
+// Attorney to give access to MultibodyElement and ForceDensityField to a
+// selection of protected methods for declaring/accessing/mutating
+// MultibodyTreeSystem parameters, cache entries, and input ports.
 template <typename T>
 class MultibodyTreeSystemElementAttorney {
  public:
@@ -555,6 +580,8 @@ class MultibodyTreeSystemElementAttorney {
  private:
   template <typename U>
   friend class drake::multibody::MultibodyElement;
+
+  friend class drake::multibody::ForceDensityField<T>;
 
   static systems::NumericParameterIndex DeclareNumericParameter(
       MultibodyTreeSystem<T>* tree_system,
@@ -567,6 +594,30 @@ class MultibodyTreeSystemElementAttorney {
       MultibodyTreeSystem<T>* tree_system, const AbstractValue& model_value) {
     return systems::AbstractParameterIndex{
         tree_system->DeclareAbstractParameter(model_value)};
+  }
+
+  static systems::CacheEntry& DeclareCacheEntry(
+      MultibodyTreeSystem<T>* tree_system, std::string description,
+      systems::ValueProducer value_producer,
+      std::set<systems::DependencyTicket> prerequisites_of_calc) {
+    DRAKE_DEMAND(tree_system != nullptr);
+    return tree_system->DeclareCacheEntry(std::move(description),
+                                          std::move(value_producer),
+                                          std::move(prerequisites_of_calc));
+  }
+
+  static systems::InputPort<T>& DeclareAbstractInputPort(
+      MultibodyTreeSystem<T>* tree_system, std::string name,
+      const AbstractValue& model_value) {
+    DRAKE_DEMAND(tree_system != nullptr);
+    return tree_system->DeclareAbstractInputPort(std::move(name), model_value);
+  }
+
+  static systems::InputPort<T>& DeclareVectorInputPort(
+      MultibodyTreeSystem<T>* tree_system, std::string name,
+      const systems::BasicVector<T>& model_value) {
+    DRAKE_DEMAND(tree_system != nullptr);
+    return tree_system->DeclareVectorInputPort(std::move(name), model_value);
   }
 };
 }  // namespace internal

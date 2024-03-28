@@ -127,8 +127,8 @@ void SplitOctohedron(const std::array<int, 6>& vertex_indices,
     for (int j = i + 1; j < 6; ++j) {
       const int a = vertex_indices[i];
       const int b = vertex_indices[j];
-      square_edge_len[SortedPair<int>(a, b)] = ExtractDoubleOrThrow(
-          (p_MVs[a] - p_MVs[b]).squaredNorm());
+      square_edge_len[SortedPair<int>(a, b)] =
+          ExtractDoubleOrThrow((p_MVs[a] - p_MVs[b]).squaredNorm());
     }
   }
 
@@ -309,7 +309,7 @@ std::pair<VolumeMesh<T>, std::vector<bool>> RefineUnitSphereMesh(
     for (const auto& v_pair : kEdges) {
       const SortedPair<int> key{t.vertex(v_pair.first),
                                 t.vertex(v_pair.second)};
-      if (edge_vertex_map.count(key) == 0) {
+      if (!edge_vertex_map.contains(key)) {
         // We haven't already split this edge; compute the vertex and determine
         // its boundary condition.
         const Vector3<T>& p_MA = mesh.vertex(key.first());
@@ -387,7 +387,7 @@ std::pair<VolumeMesh<T>, int> RefineUnitSphereMeshOnSurface(
       const SortedPair<int> key{t.vertex(v_pair.first),
                                 t.vertex(v_pair.second)};
       // TODO(SeanCurtis-TRI): Refactor edge refinement into a single method.
-      if (edge_vertex_map.count(key) == 0) {
+      if (!edge_vertex_map.contains(key)) {
         // We haven't already split this edge; compute the vertex and determine
         // its boundary condition.
         const Vector3<T>& p_MA = mesh.vertex(key.first());
@@ -541,8 +541,7 @@ VolumeMesh<T> MakeUnitSphereMesh(int refinement_level,
             positions.
  */
 template <typename T>
-VolumeMesh<T> MakeSphereVolumeMesh(const Sphere& sphere,
-                                   double resolution_hint,
+VolumeMesh<T> MakeSphereVolumeMesh(const Sphere& sphere, double resolution_hint,
                                    TessellationStrategy strategy) {
   /*
     The volume mesh is formed by successively refining an octahedron. At the

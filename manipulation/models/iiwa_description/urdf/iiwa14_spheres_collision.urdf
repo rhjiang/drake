@@ -57,16 +57,14 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_0.obj"/>
+        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_0.gltf"/>
       </geometry>
-      <material name="Grey"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="-0.015 0 0.07"/>
       <geometry>
         <cylinder length="0.17" radius="0.139"/>
       </geometry>
-      <material name="Grey"/>
     </collision>
     <self_collision_checking>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -93,16 +91,14 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_1.obj"/>
+        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_1.gltf"/>
       </geometry>
-      <material name="Grey"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 -0.03344534434 0.1974815417"/>
       <geometry>
         <sphere radius="0.07959901601"/>
       </geometry>
-      <material name="Grey"/>
     </collision>
   </link>
   <!-- joint between link_1 and link_2 -->
@@ -120,35 +116,31 @@
       <mass value="6.35"/>
       <!-- 3.95 kuka CAD value-->
       <!--4 Original Drake URDF value-->
-      <inertia ixx="0.0305" ixy="0" ixz="0" iyy="0.0304" iyz="0" izz="0.011"/>
+      <inertia ixx="0.0305" ixy="0" ixz="0" iyy="0.011" iyz="0" izz="0.0304"/>
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_2_orange.obj"/>
+        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_2_orange.gltf"/>
       </geometry>
-      <material name="Orange"/>
     </visual>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_2_grey.obj"/>
+        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_2_grey.gltf"/>
       </geometry>
-      <material name="Grey"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="-2.488800594e-017 0.203225991 -0.002065464272"/>
       <geometry>
         <sphere radius="0.06602481863"/>
       </geometry>
-      <material name="Orange"/>
     </collision>
     <collision>
       <origin rpy="0 0 0" xyz="3.940519658e-019 -0.003217678485 0.05239182903"/>
       <geometry>
         <sphere radius="0.07959901601"/>
       </geometry>
-      <material name="Orange"/>
     </collision>
   </link>
   <!-- joint between link_2 and link_3 -->
@@ -171,44 +163,38 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_3.obj"/>
+        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_3.gltf"/>
       </geometry>
-      <material name="Grey"/>
     </visual>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/band.obj"/>
+        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/band.gltf"/>
       </geometry>
-      <material name="Silver"/>
     </visual>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/kuka.obj"/>
+        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/kuka.gltf"/>
       </geometry>
-      <material name="Black"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="7.416339176e-017 0.05241123123 0.213459395"/>
       <geometry>
         <sphere radius="0.06062598796"/>
       </geometry>
-      <material name="Grey"/>
     </collision>
     <collision>
       <origin rpy="0 0 0" xyz="4.599245085e-017 -0.002046062069 0.03788349888"/>
       <geometry>
         <sphere radius="0.06602481863"/>
       </geometry>
-      <material name="Grey"/>
     </collision>
     <collision>
       <origin rpy="0 0 0" xyz="5.592688496e-017 -0.001027406431 0.2148769469"/>
       <geometry>
         <sphere radius="0.06799385346"/>
       </geometry>
-      <material name="Grey"/>
     </collision>
   </link>
   <!-- joint between link_3 and link_4 -->
@@ -226,35 +212,31 @@
       <mass value="3.5"/>
       <!--2.74 kuka CAD value-->
       <!--2.7 Original Drake URDF value-->
-      <inertia ixx="0.017" ixy="0" ixz="0" iyy="0.0164" iyz="0" izz="0.006"/>
+      <inertia ixx="0.017" ixy="0" ixz="0" iyy="0.006" iyz="0" izz="0.0164"/>
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_4_orange.obj"/>
+        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_4_orange.gltf"/>
       </geometry>
-      <material name="Orange"/>
     </visual>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_4_grey.obj"/>
+        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_4_grey.gltf"/>
       </geometry>
-      <material name="Grey"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="2.212061137e-017 0.1787589211 -0.001869578351"/>
       <geometry>
         <sphere radius="0.06644602201"/>
       </geometry>
-      <material name="Orange"/>
     </collision>
     <collision>
       <origin rpy="0 0 0" xyz="-6.09471084e-018 0.003913255811 0.05368034657"/>
       <geometry>
         <sphere radius="0.05993984276"/>
       </geometry>
-      <material name="Orange"/>
     </collision>
   </link>
   <!-- joint between link_4 and link_5 -->
@@ -277,37 +259,32 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_5.obj"/>
+        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_5.gltf"/>
       </geometry>
-      <material name="Grey"/>
     </visual>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/band.obj"/>
+        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/band.gltf"/>
       </geometry>
-      <material name="Silver"/>
     </visual>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/kuka.obj"/>
+        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/kuka.gltf"/>
       </geometry>
-      <material name="Black"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="3.178830537e-017 0.0445161559 0.2150550559"/>
       <geometry>
         <sphere radius="0.05281876964"/>
       </geometry>
-      <material name="Grey"/>
     </collision>
     <collision>
       <origin rpy="0 0 0" xyz="3.716540503e-018 9.478746123e-005 0.0302530688"/>
       <geometry>
         <sphere radius="0.06644602201"/>
       </geometry>
-      <material name="Grey"/>
     </collision>
   </link>
   <!-- joint between link_5 and link_6 -->
@@ -330,23 +307,20 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_6_orange.obj"/>
+        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_6_orange.gltf"/>
       </geometry>
-      <material name="Orange"/>
     </visual>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_6_grey.obj"/>
+        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_6_grey.gltf"/>
       </geometry>
-      <material name="Grey"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="-2.904627567e-018 -0.01623589495 0.00748218906"/>
       <geometry>
         <sphere radius="0.06341754633"/>
       </geometry>
-      <material name="Orange"/>
     </collision>
   </link>
   <!-- joint between link_6 and link_7 -->
@@ -369,16 +343,14 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_7.obj"/>
+        <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_7.gltf"/>
       </geometry>
-      <material name="Grey"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="-3.533832164e-019 -0.001260393754 -0.001625199191"/>
       <geometry>
         <sphere radius="0.05285650291"/>
       </geometry>
-      <material name="Grey"/>
     </collision>
   </link>
   <joint name="iiwa_joint_ee" type="fixed">

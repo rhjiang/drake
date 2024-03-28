@@ -155,6 +155,21 @@ const LinearBushingRollPitchYaw<double>* ParseLinearBushingRollPitchYaw(
       bushing_force_stiffness, bushing_force_damping);
 }
 
+std::optional<MultibodyConstraintId> ParseBallConstraint(
+    const std::function<Eigen::Vector3d(const char*)>& read_vector,
+    const std::function<const RigidBody<double>*(const char*)>& read_body,
+    MultibodyPlant<double>* plant) {
+  const RigidBody<double>* body_A = read_body("drake:ball_constraint_body_A");
+  if (!body_A) { return {}; }
+  const RigidBody<double>* body_B = read_body("drake:ball_constraint_body_B");
+  if (!body_B) { return {}; }
+
+  const Eigen::Vector3d p_AP = read_vector("drake:ball_constraint_p_AP");
+  const Eigen::Vector3d p_BQ = read_vector("drake:ball_constraint_p_BQ");
+
+  return plant->AddBallConstraint(*body_A, p_AP, *body_B, p_BQ);
+}
+
 // See ParseCollisionFilterGroupCommon at header for documentation
 void CollectCollisionFilterGroup(
     const DiagnosticPolicy& diagnostic,
@@ -192,7 +207,19 @@ void CollectCollisionFilterGroup(
 
     bodies.insert(body_name);
   }
-  resolver->AddGroup(diagnostic, group_name, bodies, model_instance);
+  std::set<std::string> member_groups;
+  for (auto member_node = next_child_element(group_node, "drake:member_group");
+       std::holds_alternative<sdf::ElementPtr>(member_node)
+           ? std::get<sdf::ElementPtr>(member_node) != nullptr
+           : std::get<tinyxml2::XMLElement*>(member_node) != nullptr;
+       member_node = next_sibling_element(member_node, "drake:member_group")) {
+    const std::string member_group_name = read_tag_string(member_node, "name");
+    if (member_group_name.empty()) { continue; }
+
+    member_groups.insert(member_group_name);
+  }
+  resolver->AddGroup(diagnostic, group_name, bodies, member_groups,
+                     model_instance);
 
   for (auto ignore_node = next_child_element(
            group_node, "drake:ignored_collision_filter_group");
@@ -290,7 +317,8 @@ SpatialInertia<double> ParseSpatialInertia(
             inertia_Bi_Bi.ixx, inertia_Bi_Bi.iyy, inertia_Bi_Bi.izz,
             inertia_Bi_Bi.ixy, inertia_Bi_Bi.ixz, inertia_Bi_Bi.iyz);
   } catch (const std::exception& e) {
-    diagnostic.Warning(e.what());
+    diagnostic.Warning(
+        fmt::format("While parsing inertia matrix: {}", e.what()));
     return Mdum_BBo_B;
   }
 
@@ -310,7 +338,8 @@ SpatialInertia<double> ParseSpatialInertia(
     return SpatialInertia<double>::MakeFromCentralInertia(
         mass, p_BoBcm_B, I_BBcm_B);
   } catch (const std::exception& e) {
-    diagnostic.Warning(e.what());
+    diagnostic.Warning(
+        fmt::format("While re-expressing as central inertia: {}", e.what()));
     return Mdum_BBo_B;
   }
   DRAKE_UNREACHABLE();

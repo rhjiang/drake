@@ -19,7 +19,6 @@ static_assert(EIGEN_VERSION_AT_LEAST(3, 3, 5),
 #include "drake/common/constants.h"
 #include "drake/common/drake_assert.h"
 #include "drake/common/drake_copyable.h"
-#include "drake/common/drake_deprecated.h"
 
 namespace drake {
 
@@ -162,70 +161,6 @@ using AngleAxis = Eigen::AngleAxis<Scalar>;
 template <typename Scalar>
 using Isometry3 = Eigen::Transform<Scalar, 3, Eigen::Isometry>;
 
-/// (Deprecated.)
-template <typename Scalar>
-using Translation3
-    DRAKE_DEPRECATED("2023-06-01", "This typedef is no longer used in Drake.")
-    = Eigen::Translation<Scalar, 3>;
-
-/// (Deprecated.)
-template <typename Scalar>
-using TwistVector
-    DRAKE_DEPRECATED("2023-06-01", "This typedef is no longer used in Drake.")
-    = Eigen::Matrix<Scalar, 6, 1>;
-
-/// (Deprecated.)
-template <typename Scalar>
-using TwistMatrix
-    DRAKE_DEPRECATED("2023-06-01", "This typedef is no longer used in Drake.")
-    = Eigen::Matrix<Scalar, 6, Eigen::Dynamic>;
-
-/// (Deprecated.)
-template <typename Scalar>
-using SquareTwistMatrix
-    DRAKE_DEPRECATED("2023-06-01", "This typedef is no longer used in Drake.")
-    = Eigen::Matrix<Scalar, 6, 6>;
-
-/// (Deprecated.)
-template <typename Scalar>
-using WrenchVector
-    DRAKE_DEPRECATED("2023-06-01", "This typedef is no longer used in Drake.")
-    = Eigen::Matrix<Scalar, 6, 1>;
-
-template <int a, int b>
-struct DRAKE_DEPRECATED("2023-06-01",
-    "This metaprogramming struct is no longer used in Drake.")
-EigenSizeMinPreferDynamic {
-  // clang-format off
-  static constexpr int value = (a == 0 || b == 0) ? 0 :
-                               (a == 1 || b == 1) ? 1 :
-     (a == Eigen::Dynamic || b == Eigen::Dynamic) ? Eigen::Dynamic :
-                                           a <= b ? a : b;
-  // clang-format on
-};
-
-template <int a, int b>
-struct DRAKE_DEPRECATED("2023-06-01",
-    "This metaprogramming struct is no longer used in Drake.")
-EigenSizeMinPreferFixed {
-  // clang-format off
-  static constexpr int value = (a == 0 || b == 0) ? 0 :
-                               (a == 1 || b == 1) ? 1 :
-     (a == Eigen::Dynamic && b == Eigen::Dynamic) ? Eigen::Dynamic :
-                            (a == Eigen::Dynamic) ? b :
-                            (b == Eigen::Dynamic) ? a :
-                                           a <= b ? a : b;
-  // clang-format on
-};
-
-template <int a, int b>
-struct DRAKE_DEPRECATED("2023-06-01",
-    "This metaprogramming struct is no longer used in Drake.")
-MultiplyEigenSizes {
-  static constexpr int value =
-      (a == Eigen::Dynamic || b == Eigen::Dynamic) ? Eigen::Dynamic : a * b;
-};
-
 /*
  * Determines if a type is derived from EigenBase<> (e.g. ArrayBase<>,
  * MatrixBase<>).
@@ -279,6 +214,26 @@ struct is_eigen_nonvector_of
 
 // TODO(eric.cousineau): Add alias is_eigen_matrix_of = is_eigen_scalar_same if
 // appropriate.
+
+/// Given a random access container (like std::vector, std::array, or C array),
+/// returns an Eigen::Map view into that container. Because this effectively
+/// forms a reference to borrowed memory, you must be be careful using the
+/// return value as anything other than a temporary. The Map return value
+/// currently uses Eigen::Dynamic size at compile time even when the container
+/// is fixed-size (e.g., std::array); if that ever turns into a performance
+/// bottleneck in practice, it would be plausible to interrogate the size and
+/// return a fixed-size Map, instead.
+template <typename Container>
+auto EigenMapView(Container&& c) {
+  using ElementRef = decltype(std::declval<Container&>()[size_t{}]);
+  using Element = std::remove_reference_t<ElementRef>;
+  if constexpr (std::is_const_v<Element>) {
+    using Scalar = std::remove_const_t<Element>;
+    return Eigen::Map<const VectorX<Scalar>>(std::data(c), std::size(c));
+  } else {
+    return Eigen::Map<VectorX<Element>>(std::data(c), std::size(c));
+  }
+}
 
 /// This wrapper class provides a way to write non-template functions taking raw
 /// pointers to Eigen objects as parameters while limiting the number of copies,

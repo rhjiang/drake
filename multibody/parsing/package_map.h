@@ -60,6 +60,12 @@ class PackageMap final {
       const std::string& package_name,
       std::optional<std::string>* deprecated_message = nullptr) const;
 
+  /** Returns a resolved path for `url`. URL schemes are either `file://` for
+  local files or `package://` (or `model://`).
+
+  @throws std::exception if the url cannot be resolved. */
+  std::string ResolveUrl(const std::string& url) const;
+
   ///@}
 
   /** @name Functions for adding packages to the map */
@@ -217,6 +223,13 @@ class PackageMap final {
   std::unique_ptr<Impl> impl_;
 };
 
+namespace internal {
+
+/* (Internal use only) Parses the metadata from `tools/workspace/drake_models`
+into the RemoteParams structure needed by PackageMap. */
+PackageMap::RemoteParams GetDrakeModelsRemoteParams();
+
+}  // namespace internal
 }  // namespace multibody
 }  // namespace drake
 

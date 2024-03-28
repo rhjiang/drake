@@ -24,6 +24,7 @@ Integrator<T>::~Integrator() = default;
 template <typename T>
 void Integrator<T>::set_integral_value(
     Context<T>* context, const Eigen::Ref<const VectorX<T>>& value) const {
+  this->ValidateContext(context);
   VectorBase<T>& state_vector = context->get_mutable_continuous_state_vector();
   // Asserts that the input value is a column vector of the appropriate size.
   DRAKE_DEMAND(value.rows() == state_vector.size() && value.cols() == 1);
@@ -32,8 +33,7 @@ void Integrator<T>::set_integral_value(
 
 template <typename T>
 void Integrator<T>::DoCalcVectorTimeDerivatives(
-    const Context<T>&,
-    const Eigen::VectorBlock<const VectorX<T>>& input,
+    const Context<T>&, const Eigen::VectorBlock<const VectorX<T>>& input,
     const Eigen::VectorBlock<const VectorX<T>>& state,
     Eigen::VectorBlock<VectorX<T>>* derivatives) const {
   unused(state);
@@ -42,8 +42,7 @@ void Integrator<T>::DoCalcVectorTimeDerivatives(
 
 template <typename T>
 void Integrator<T>::DoCalcVectorOutput(
-    const Context<T>&,
-    const Eigen::VectorBlock<const VectorX<T>>& input,
+    const Context<T>&, const Eigen::VectorBlock<const VectorX<T>>& input,
     const Eigen::VectorBlock<const VectorX<T>>& state,
     Eigen::VectorBlock<VectorX<T>>* output) const {
   unused(input);

@@ -30,9 +30,8 @@
       <visual>
         <origin xyz="0 0 0" rpy="0 0 0"/>
         <geometry>
-          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_0.obj"/>
+          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_0.gltf"/>
         </geometry>
-        <material name="Grey"/>
       </visual>
       <xacro:if value="${collision_type == 'mesh'}">
         <collision>
@@ -81,9 +80,8 @@
       <visual>
         <origin xyz="0 0 0" rpy="0 0 0"/>
         <geometry>
-          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_1.obj"/>
+          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_1.gltf"/>
         </geometry>
-        <material name="Grey"/>
       </visual>
       <xacro:if value="${collision_type == 'mesh'}">
         <collision>
@@ -123,21 +121,19 @@
         <mass value="6.35"/>
         <!-- 3.95 kuka CAD value-->
         <!--4 Original Drake URDF value-->
-        <inertia ixx="0.0305" ixy="0" ixz="0" iyy="0.0304" iyz="0" izz="0.011"/>
+        <inertia ixx="0.0305" ixy="0" ixz="0" iyy="0.011" iyz="0" izz="0.0304"/>
       </inertial>
       <visual>
         <origin rpy="0 0 0" xyz="0 0 0"/>
         <geometry>
-          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_2_orange.obj"/>
+          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_2_orange.gltf"/>
         </geometry>
-        <material name="Orange"/>
       </visual>
       <visual>
         <origin rpy="0 0 0" xyz="0 0 0"/>
         <geometry>
-          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_2_grey.obj"/>
+          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_2_grey.gltf"/>
         </geometry>
-        <material name="Grey"/>
       </visual>
       <xacro:if value="${collision_type == 'mesh'}">
         <collision>
@@ -182,23 +178,20 @@
       <visual>
         <origin xyz="0 0 0" rpy="0 0 0"/>
         <geometry>
-          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_3.obj"/>
+          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_3.gltf"/>
         </geometry>
-        <material name="Grey"/>
       </visual>
       <visual>
         <origin rpy="0 0 0" xyz="0 0 0"/>
         <geometry>
-          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/kuka.obj"/>
+          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/kuka.gltf"/>
         </geometry>
-        <material name="Black"/>
       </visual>
       <visual>
         <origin rpy="0 0 0" xyz="0 0 0"/>
         <geometry>
-          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/band.obj"/>
+          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/band.gltf"/>
         </geometry>
-        <material name="Silver"/>
       </visual>
       <xacro:if value="${collision_type == 'mesh'}">
         <collision>
@@ -238,19 +231,18 @@
         <mass value="3.5"/>
         <!--2.74 kuka CAD value-->
         <!--2.7 Original Drake URDF value-->
-        <inertia ixx="0.017" ixy="0" ixz="0" iyy="0.0164" iyz="0" izz="0.006"/>
+        <inertia ixx="0.017" ixy="0" ixz="0" iyy="0.006" iyz="0" izz="0.0164"/>
       </inertial>
       <visual>
         <origin rpy="0 0 0" xyz="0 0 0"/>
         <geometry>
-          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_4_orange.obj"/>
+          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_4_orange.gltf"/>
         </geometry>
-        <material name="Orange"/>
       </visual>
       <visual>
         <origin rpy="0 0 0" xyz="0 0 0"/>
         <geometry>
-          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_4_grey.obj"/>
+          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_4_grey.gltf"/>
         </geometry>
         <material name="Grey"/>
       </visual>
@@ -297,23 +289,20 @@
       <visual>
         <origin xyz="0 0 0" rpy="0 0 0"/>
         <geometry>
-          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_5.obj"/>
+          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_5.gltf"/>
         </geometry>
-        <material name="Grey"/>
       </visual>
       <visual>
         <origin rpy="0 0 0" xyz="0 0 0"/>
         <geometry>
-          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/kuka.obj"/>
+          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/kuka.gltf"/>
         </geometry>
-        <material name="Black"/>
       </visual>
       <visual>
         <origin rpy="0 0 0" xyz="0 0 0"/>
         <geometry>
-          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/band.obj"/>
+          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/band.gltf"/>
         </geometry>
-        <material name="Silver"/>
       </visual>
       <xacro:if value="${collision_type == 'mesh'}">
         <collision>
@@ -358,16 +347,14 @@
       <visual>
         <origin rpy="0 0 0" xyz="0 0 0"/>
         <geometry>
-          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_6_grey.obj"/>
+          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_6_grey.gltf"/>
         </geometry>
-        <material name="Grey"/>
       </visual>
       <visual>
         <origin rpy="0 0 0" xyz="0 0 0"/>
         <geometry>
-          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_6_orange.obj"/>
+          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_6_orange.gltf"/>
         </geometry>
-        <material name="Orange"/>
       </visual>
       <xacro:if value="${collision_type == 'mesh'}">
         <collision>
@@ -414,9 +401,8 @@
       <visual>
         <origin xyz="0 0 0" rpy="0 0 0"/>
         <geometry>
-          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_7.obj"/>
+          <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/visual/link_7.gltf"/>
         </geometry>
-        <material name="Grey"/>
       </visual>
       <xacro:if value="${collision_type == 'mesh'}">
         <collision>
@@ -442,7 +428,9 @@
         <collision>
           <origin xyz="0 0 0" rpy="0 0 0"/>
           <geometry>
-            <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/collision/link_7_polytope.obj"/>
+            <mesh filename="package://drake_models/iiwa_description/meshes/iiwa14/collision/link_7_polytope.obj">
+              <drake:declare_convex/>
+            </mesh>
           </geometry>
           <material name="Grey"/>
         </collision>
@@ -464,6 +452,12 @@
     <link name="${robot_name}_link_ee">
     </link>
     <frame name="${robot_name}_frame_ee" link="${robot_name}_link_ee" xyz="0.09 0 0" rpy="3.141592653589793 0 1.570796326794897"/>
+    <drake:collision_filter_group name="${robot_name}_wrist">
+      <drake:member link="${robot_name}_link_5"/>
+      <drake:member link="${robot_name}_link_6"/>
+      <drake:member link="${robot_name}_link_7"/>
+      <drake:ignored_collision_filter_group name="${robot_name}_wrist"/>
+    </drake:collision_filter_group>
     <!--Extensions -->
     <xacro:iiwa_gazebo robot_name="${robot_name}"/>
     <xacro:iiwa_transmission hardware_interface="${hardware_interface}" robot_name="${robot_name}"/>

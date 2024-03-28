@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-#include <drake_vendor/fcl/fcl.h>
+#include <fcl/fcl.h>
 #include <gtest/gtest.h>
 
 #include "drake/common/test_utilities/expect_no_throw.h"
@@ -58,10 +58,7 @@ ProximityProperties soft_properties() {
 using ScalarTypes = ::testing::Types<double, AutoDiffXd>;
 
 // Specification of the shape types to use with TestScene.
-enum class ShapeType {
-  kSphere,
-  kHalfSpace
-};
+enum class ShapeType { kSphere, kHalfSpace, kTinySphere };
 
 // Utility class for encoding a scene with two geometries. Each geometry can be
 // either a sphere or a half space. The sphere gets tessellated and is
@@ -75,8 +72,7 @@ class TestScene {
         shape_A_type_(A_shape_type),
         shape_B_type_(B_shape_type),
         data_{&collision_filter_, &X_WGs_, &hydroelastic_geometries_,
-              HydroelasticContactRepresentation::kTriangle,
-              &surfaces_} {
+              HydroelasticContactRepresentation::kTriangle, &surfaces_} {
     X_WGs_[id_A_] = RigidTransform<T>();
     X_WGs_[id_B_] = RigidTransform<T>();
   }
@@ -137,6 +133,11 @@ class TestScene {
         shape = make_unique<CollisionObjectd>(make_shared<Halfspaced>());
         MakeHydroelastic(id, type, HalfSpace());
         break;
+      case ShapeType::kTinySphere:
+        shape =
+            make_unique<CollisionObjectd>(make_shared<Sphered>(kTinyRadius));
+        MakeHydroelastic(id, type, Sphere(kTinyRadius));
+        break;
     }
     data->write_to(shape.get());
     return shape;
@@ -181,11 +182,22 @@ class TestScene {
         this->shape_B_type_ == ShapeType::kHalfSpace)
       return;
 
-    // The distance from the world origin to the surface of shape A. In other
+    // The distance from the world origin to the surface of a shape. In other
     // words, a point at Wo needs to be moved `distance` units to lie on the
-    // surface of A.
-    const double dist_WoA =
-        this->shape_A_type_ == ShapeType::kSphere ? kRadius : 0;
+    // surface of that shape.
+    auto distance_to_shape = [](ShapeType shape_type) -> double {
+      switch (shape_type) {
+        case ShapeType::kSphere:
+          return kRadius;
+        case ShapeType::kTinySphere:
+          return kTinyRadius;
+        case ShapeType::kHalfSpace:
+          return 0.0;
+      }
+      DRAKE_UNREACHABLE();
+    };
+
+    const double dist_WoA = distance_to_shape(this->shape_A_type_);
     const Vector3d rpy_WA{M_PI, 0, 0};
 
     // Remember that every AutoDiffXd-valued RotationMatrix we make has
@@ -194,9 +206,7 @@ class TestScene {
     X_WGs_[id_A_] =
         RigidTransform<T>(MakeRotation(rpy_WA), Vector3<T>(0, 0, 0));
 
-    // Similarly, the distance to the surface of B (see dist_WoA).
-    const double dist_WoB =
-        this->shape_B_type_ == ShapeType::kSphere ? kRadius : 0;
+    const double dist_WoB = distance_to_shape(this->shape_B_type_);
     const double z_offset =
         -(dist_WoA + dist_WoB) + (are_colliding ? 0.125 : -0.125);
     const Vector3d p_WB{0, 0, z_offset};
@@ -211,7 +221,8 @@ class TestScene {
     // Filter the pair (A, B); we'll put the ids in a set and simply return that
     // set for the extract ids function.
     std::unordered_set<GeometryId> ids{data_A.id(), data_B.id()};
-    CollisionFilter::ExtractIds extract = [&ids](const GeometrySet&) {
+    CollisionFilter::ExtractIds extract = [&ids](const GeometrySet&,
+                                                 CollisionFilterScope) {
       return ids;
     };
     collision_filter_.Apply(CollisionFilterDeclaration().ExcludeWithin(
@@ -241,6 +252,7 @@ class TestScene {
   GeometryId id_A_{};
   GeometryId id_B_{};
   static constexpr double kRadius{0.25};
+  static constexpr double kTinyRadius{1e-7};
   const ShapeType shape_A_type_;
   const ShapeType shape_B_type_;
   unique_ptr<CollisionObjectd> shape_A_;
@@ -544,14 +556,14 @@ TYPED_TEST(MaybeCalcContactSurfaceTests, UndefinedGeometry) {
   ASSERT_EQ(scene.surfaces().size(), 0u);
 
   // Case: first is undefined.
-  result = MaybeCalcContactSurface<T>(
-      &scene.shape_B(), &scene.shape_A(), &scene.data());
+  result = MaybeCalcContactSurface<T>(&scene.shape_B(), &scene.shape_A(),
+                                      &scene.data());
   ASSERT_EQ(result, CalcContactSurfaceResult::kUnsupported);
   ASSERT_EQ(scene.surfaces().size(), 0u);
 
   // Case: both are undefined.
-  result = MaybeCalcContactSurface<T>(
-      &scene.shape_B(), &scene.shape_B(), &scene.data());
+  result = MaybeCalcContactSurface<T>(&scene.shape_B(), &scene.shape_B(),
+                                      &scene.data());
   ASSERT_EQ(result, CalcContactSurfaceResult::kUnsupported);
   ASSERT_EQ(scene.surfaces().size(), 0u);
 }
@@ -610,7 +622,7 @@ TYPED_TEST(MaybeCalcContactSurfaceTests, BothHalfSpace) {
           &scene.shape_A(), &scene.shape_B(), &scene.data());
 
       if (first_type == HydroelasticType::kRigid &&
-      second_type == HydroelasticType::kRigid) {
+          second_type == HydroelasticType::kRigid) {
         EXPECT_EQ(result, CalcContactSurfaceResult::kRigidRigid);
         EXPECT_EQ(scene.surfaces().size(), 0u);
       } else {
@@ -892,6 +904,22 @@ TYPED_TEST(HydroelasticCallbackFallbackTyped, ValidPairProducesResult) {
   EXPECT_EQ(scene.surfaces().size(), 1u);
   EXPECT_TRUE(ValidateDerivatives(scene.surfaces()[0]));
   EXPECT_EQ(point_pairs.size(), 0u);
+}
+
+// Confirms that soft tiny-spheres vanish from contact queries.
+TYPED_TEST(HydroelasticCallbackFallbackTyped, SoftTinysVanish) {
+  using T = TypeParam;
+
+  TestScene<T> scene{ShapeType::kSphere, ShapeType::kTinySphere};
+  scene.ConfigureScene(HydroelasticType::kRigid, HydroelasticType::kSoft);
+
+  vector<PenetrationAsPointPair<T>> point_pairs;
+  CallbackWithFallbackData<T> data{scene.data(), &point_pairs};
+
+  DRAKE_EXPECT_NO_THROW(
+      CallbackWithFallback<T>(&scene.shape_A(), &scene.shape_B(), &data));
+  EXPECT_TRUE(scene.surfaces().empty());
+  EXPECT_TRUE(point_pairs.empty());
 }
 
 }  // namespace

@@ -1,12 +1,9 @@
+load("//tools/skylark:drake_py.bzl", "drake_py_binary")
 load("//tools/skylark:py.bzl", "py_binary", "py_library")
 load("//tools/lint:lint.bzl", "add_lint_tests")
 load(
-    "@drake//tools/skylark:drake_runfiles_binary.bzl",
+    "//tools/skylark:drake_runfiles_binary.bzl",
     "drake_runfiles_binary",
-)
-load(
-    "@drake_visualizer//:defs.bzl",
-    _DRAKE_VISUALIZER_ENABLED = "ENABLED",
 )
 
 package(default_visibility = ["//visibility:public"])
@@ -16,34 +13,6 @@ py_library(
     srcs = ["__init__.py"],
     visibility = [":__subpackages__"],
     deps = ["//:module_py"],
-)
-
-_VISUALIZER_MAIN = "{}:drake_visualizer_{}.py".format(
-    "//tools/workspace/drake_visualizer",
-    "bazel" if _DRAKE_VISUALIZER_ENABLED else "disabled",
-)
-
-py_binary(
-    name = "drake_visualizer_py",
-    srcs = [_VISUALIZER_MAIN],
-    data = [
-        "//examples:models",
-        "@drake_visualizer",
-    ] if _DRAKE_VISUALIZER_ENABLED else [],
-    main = _VISUALIZER_MAIN,
-    python_version = "PY3",
-    srcs_version = "PY3",
-    deps = [
-        "//lcmtypes:lcmtypes_drake_py",
-        "//tools/workspace/drake_visualizer:builtin_scripts_py",
-        "@drake_visualizer//:drake_visualizer_python_deps",
-        "@optitrack_driver//lcmtypes:py_optitrack_lcmtypes",
-    ] if _DRAKE_VISUALIZER_ENABLED else [],
-)
-
-drake_runfiles_binary(
-    name = "drake_visualizer",
-    target = ":drake_visualizer_py",
 )
 
 alias(
@@ -56,9 +25,23 @@ alias(
     actual = "//bindings/pydrake/visualization:model_visualizer",
 )
 
+drake_py_binary(
+    name = "model_visualizer_private",
+    testonly = True,
+    srcs = ["model_visualizer_private.py"],
+    data = ["//:some_test_models"],
+    visibility = ["//visibility:private"],
+    deps = ["//bindings/pydrake/visualization:model_visualizer"],
+)
+
 alias(
     name = "mesh_to_model",
     actual = "//bindings/pydrake/multibody:mesh_to_model",
+)
+
+alias(
+    name = "fix_inertia",
+    actual = "//bindings/pydrake/multibody:fix_inertia",
 )
 
 # === config_setting rules ===
@@ -83,6 +66,26 @@ config_setting(
 config_setting(
     name = "with_snopt",
     values = {"define": "WITH_SNOPT=ON"},
+)
+
+config_setting(
+    name = "using_sanitizer",
+    values = {"define": "USING_SANITIZER=ON"},
+)
+
+config_setting(
+    name = "using_memcheck",
+    values = {"define": "USING_MEMCHECK=ON"},
+)
+
+# Clarabel is an open-source solver, and is included in the Drake build by
+# default. The Clarabel solver is irrelevant to some users of
+# MathematicalProgram, so we provide a hidden switch to shut it off for
+# developers who don't actually need it. This is not a supported configuration.
+# Use at your own risk: --define=NO_CLARABEL=ON
+config_setting(
+    name = "no_clarabel",
+    values = {"define": "NO_CLARABEL=ON"},
 )
 
 # CLP is an open-source solver, and is included in the Drake build by
@@ -143,6 +146,15 @@ config_setting(
 config_setting(
     name = "no_scs",
     values = {"define": "NO_SCS=ON"},
+)
+
+# We are exploring adding USD support to Drake. For the moment, it is opt-in.
+# See https://github.com/PixarAnimationStudios/OpenUSD for details.
+# Use `--define=WITH_USD=ON` on the bazel command line to enable it.
+# (In CI, --config=everything also enables it on Ubuntu.)
+config_setting(
+    name = "with_usd",
+    values = {"define": "WITH_USD=ON"},
 )
 
 add_lint_tests()
