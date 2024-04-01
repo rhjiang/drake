@@ -602,6 +602,9 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
   plant.ValidateContext(context);
   const int nq = plant.num_positions();
   const Eigen::VectorXd seed = plant.GetPositions(context);
+  for (int i = 0; i < nq; ++i){
+    log()->info("seed: {}", seed(i));
+  }
   const int nc = static_cast<int>(options.configuration_obstacles.size());
   // Note: We require finite joint limits to define the bounding box for the
   // IRIS algorithm.
@@ -673,10 +676,6 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
         query_object.ComputeSignedDistancePairClosestPoints(geomA, geomB)
             .distance;
     if (distance < 0.0) {
-      for (int i = 0; i < nq; ++i){
-        log()->info("seed: {}", seed(i));
-      }
-      
       throw std::runtime_error(
           fmt::format("The seed point is in collision; geometry {} is in "
                       "collision with geometry {}",
