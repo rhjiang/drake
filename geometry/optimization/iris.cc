@@ -880,6 +880,7 @@ HPolyhedron RayIris(const MultibodyPlant<double>& plant,
           collision_search_step_size = (particles_in_collision.at(i_particle) - E.center()).norm() / options.face_ray_steps;
         } else {
           direction = (particles.at(i_particle) - E.center()).normalized();
+          collision_search_step_size = (particles.at(i_particle) - E.center()).norm() / options.face_ray_steps;
         }
 
         std::pair<Eigen::VectorXd, int> closest_collision_info;
