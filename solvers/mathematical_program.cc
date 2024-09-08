@@ -536,6 +536,11 @@ Binding<L2NormCost> MathematicalProgram::AddL2NormCost(
   return AddCost(std::make_shared<L2NormCost>(A, b), vars);
 }
 
+Binding<L2NormCost> MathematicalProgram::AddL2NormCost(
+    const symbolic::Expression& e, double psd_tol, double coefficient_tol) {
+  return AddCost(internal::ParseL2NormCost(e, psd_tol, coefficient_tol));
+}
+
 std::tuple<symbolic::Variable, Binding<LinearCost>,
            Binding<LorentzConeConstraint>>
 MathematicalProgram::AddL2NormCostUsingConicConstraint(
@@ -966,6 +971,13 @@ Binding<LorentzConeConstraint> MathematicalProgram::AddConstraint(
   required_capabilities_.insert(ProgramAttribute::kLorentzConeConstraint);
   lorentz_cone_constraint_.push_back(binding);
   return lorentz_cone_constraint_.back();
+}
+
+Binding<LorentzConeConstraint> MathematicalProgram::AddLorentzConeConstraint(
+    const symbolic::Formula& f, LorentzConeConstraint::EvalType eval_type,
+    double psd_tol, double coefficient_tol) {
+  return AddConstraint(internal::ParseLorentzConeConstraint(
+      f, eval_type, psd_tol, coefficient_tol));
 }
 
 Binding<LorentzConeConstraint> MathematicalProgram::AddLorentzConeConstraint(

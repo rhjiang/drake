@@ -28,7 +28,7 @@ namespace multibody {
 template <typename T>
 class PrismaticJoint final : public Joint<T> {
  public:
-  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(PrismaticJoint)
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(PrismaticJoint);
 
   template <typename Scalar>
   using Context = systems::Context<Scalar>;
@@ -71,6 +71,8 @@ class PrismaticJoint final : public Joint<T> {
       double pos_upper_limit = std::numeric_limits<double>::infinity(),
       double damping = 0);
 
+  ~PrismaticJoint() override;
+
   const std::string& type_name() const override;
 
   /// Returns the axis of translation for `this` joint as a unit vector.
@@ -83,10 +85,6 @@ class PrismaticJoint final : public Joint<T> {
 
   /// Returns `this` joint's default damping constant in N⋅s/m.
   double default_damping() const { return this->default_damping_vector()[0]; }
-
-  DRAKE_DEPRECATED("2024-06-01", "Use default_damping() instead.")
-  double damping() const { return this->default_damping_vector()[0]; }
-
 
   /// Sets the default value of viscous damping for this joint, in N⋅s/m.
   /// @throws std::exception if damping is negative.
@@ -149,7 +147,7 @@ class PrismaticJoint final : public Joint<T> {
   /// @returns a constant reference to `this` joint.
   const PrismaticJoint<T>& set_translation(
       Context<T>* context, const T& translation) const {
-    get_mobilizer()->set_translation(context, translation);
+    get_mobilizer()->SetTranslation(context, translation);
     return *this;
   }
 
@@ -174,7 +172,7 @@ class PrismaticJoint final : public Joint<T> {
   /// @returns a constant reference to `this` joint.
   const PrismaticJoint<T>& set_translation_rate(
       Context<T>* context, const T& translation_dot) const {
-    get_mobilizer()->set_translation_rate(context, translation_dot);
+    get_mobilizer()->SetTranslationRate(context, translation_dot);
     return *this;
   }
 
@@ -306,12 +304,15 @@ class PrismaticJoint final : public Joint<T> {
   }
 
   // Joint<T> finals:
-  std::unique_ptr<typename Joint<T>::BluePrint>
-  MakeImplementationBlueprint() const final {
+  std::unique_ptr<typename Joint<T>::BluePrint> MakeImplementationBlueprint(
+      const internal::SpanningForest::Mobod& mobod) const final {
     auto blue_print = std::make_unique<typename Joint<T>::BluePrint>();
+    const auto [inboard_frame, outboard_frame] =
+        this->tree_frames(mobod.is_reversed());
+    // TODO(sherm1) The mobilizer needs to be reversed, not just the frames.
     auto prismatic_mobilizer =
         std::make_unique<internal::PrismaticMobilizer<T>>(
-            this->frame_on_parent(), this->frame_on_child(), axis_);
+            mobod, *inboard_frame, *outboard_frame, axis_);
     prismatic_mobilizer->set_default_position(this->default_positions());
     blue_print->mobilizer = std::move(prismatic_mobilizer);
     return blue_print;
@@ -369,4 +370,4 @@ template <typename T> const char PrismaticJoint<T>::kTypeName[] = "prismatic";
 }  // namespace drake
 
 DRAKE_DECLARE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
-    class ::drake::multibody::PrismaticJoint)
+    class ::drake::multibody::PrismaticJoint);

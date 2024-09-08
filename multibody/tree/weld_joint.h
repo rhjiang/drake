@@ -21,7 +21,7 @@ namespace multibody {
 template <typename T>
 class WeldJoint final : public Joint<T> {
  public:
-  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(WeldJoint)
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(WeldJoint);
 
   template<typename Scalar>
   using Context = systems::Context<Scalar>;
@@ -42,6 +42,8 @@ class WeldJoint final : public Joint<T> {
                  VectorX<double>() /* no acc lower limits */,
                  VectorX<double>() /* no acc upper limits */),
         X_FM_(X_FM) {}
+
+  ~WeldJoint() override;
 
   const std::string& type_name() const override;
 
@@ -93,8 +95,8 @@ class WeldJoint final : public Joint<T> {
   void do_set_default_positions(const VectorX<double>&) override { return; }
 
   // Joint<T> overrides:
-  std::unique_ptr<typename Joint<T>::BluePrint>
-  MakeImplementationBlueprint() const override;
+  std::unique_ptr<typename Joint<T>::BluePrint> MakeImplementationBlueprint(
+      const internal::SpanningForest::Mobod& mobod) const override;
 
   std::unique_ptr<Joint<double>> DoCloneToScalar(
       const internal::MultibodyTree<double>& tree_clone) const override;
@@ -145,4 +147,4 @@ template <typename T> const char WeldJoint<T>::kTypeName[] = "weld";
 }  // namespace drake
 
 DRAKE_DECLARE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
-    class ::drake::multibody::WeldJoint)
+    class ::drake::multibody::WeldJoint);

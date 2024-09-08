@@ -13,6 +13,9 @@ namespace multibody {
 namespace internal {
 
 template <typename T>
+QuaternionFloatingMobilizer<T>::~QuaternionFloatingMobilizer() = default;
+
+template <typename T>
 std::string QuaternionFloatingMobilizer<T>::position_suffix(
   int position_index_in_mobilizer) const {
   // Note: The order of variables here is documented in get_quaternion().
@@ -164,14 +167,14 @@ Vector3<T> QuaternionFloatingMobilizer<T>::get_angular_velocity(
 
 template <typename T>
 const QuaternionFloatingMobilizer<T>&
-QuaternionFloatingMobilizer<T>::set_angular_velocity(
+QuaternionFloatingMobilizer<T>::SetAngularVelocity(
     systems::Context<T>* context, const Vector3<T>& w_FM) const {
-  return set_angular_velocity(*context, w_FM, &context->get_mutable_state());
+  return SetAngularVelocity(*context, w_FM, &context->get_mutable_state());
 }
 
 template <typename T>
 const QuaternionFloatingMobilizer<T>&
-QuaternionFloatingMobilizer<T>::set_angular_velocity(
+QuaternionFloatingMobilizer<T>::SetAngularVelocity(
     const systems::Context<T>&, const Vector3<T>& w_FM,
     systems::State<T>* state) const {
   // Note: See storage order notes in get_angular_velocity().
@@ -191,15 +194,15 @@ Vector3<T> QuaternionFloatingMobilizer<T>::get_translational_velocity(
 
 template <typename T>
 const QuaternionFloatingMobilizer<T>&
-QuaternionFloatingMobilizer<T>::set_translational_velocity(
+QuaternionFloatingMobilizer<T>::SetTranslationalVelocity(
     systems::Context<T>* context, const Vector3<T>& v_FM) const {
-  return set_translational_velocity(*context, v_FM,
-                                    &context->get_mutable_state());
+  return SetTranslationalVelocity(*context, v_FM,
+                                  &context->get_mutable_state());
 }
 
 template <typename T>
 const QuaternionFloatingMobilizer<T>&
-QuaternionFloatingMobilizer<T>::set_translational_velocity(
+QuaternionFloatingMobilizer<T>::SetTranslationalVelocity(
     const systems::Context<T>&, const Vector3<T>& v_FM,
     systems::State<T>* state) const {
   auto v = this->get_mutable_velocities(state);
@@ -410,7 +413,8 @@ QuaternionFloatingMobilizer<T>::TemplatedDoCloneToScalar(
   const Frame<ToScalar>& outboard_frame_clone =
       tree_clone.get_variant(this->outboard_frame());
   return std::make_unique<QuaternionFloatingMobilizer<ToScalar>>(
-      inboard_frame_clone, outboard_frame_clone);
+      tree_clone.get_mobod(this->mobod().index()), inboard_frame_clone,
+      outboard_frame_clone);
 }
 
 template <typename T>
@@ -439,4 +443,4 @@ QuaternionFloatingMobilizer<T>::DoCloneToScalar(
 }  // namespace drake
 
 DRAKE_DEFINE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
-    class ::drake::multibody::internal::QuaternionFloatingMobilizer)
+    class ::drake::multibody::internal::QuaternionFloatingMobilizer);

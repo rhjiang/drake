@@ -9,6 +9,7 @@
 #include "drake/common/drake_copyable.h"
 #include "drake/common/random.h"
 #include "drake/multibody/math/spatial_algebra.h"
+#include "drake/multibody/topology/forest.h"
 #include "drake/multibody/tree/frame.h"
 #include "drake/multibody/tree/multibody_element.h"
 #include "drake/multibody/tree/multibody_tree_indexes.h"
@@ -206,31 +207,66 @@ template<typename T> class BodyNode;
 // - [Featherstone 2008] Featherstone, R., 2008. Rigid body dynamics
 //                       algorithms. Springer.
 //
+// <h3>Interaction with the Context</h3>
+//
+// Some member functions of a Mobilizer take a `const Context& context` as an
+// input argument. To ensure correctness of the MultibodyTreeSystem's cache
+// entry dependencies, it is essential that such functions only access an
+// appropriate subset the Context.
+//
+// A mobilizer's generalized positions q and generalized velocities v exist as
+// State in the context. The mobilizer is FORBIDDEN from using any State from
+// the context other than its own q and v data. Some functions are documented
+// to be only a function of q (not v); those functions must not access v.
+//
+// A mobilizer is allowed to access any Parameters in the context that it has
+// declared, from any method that takes a Context, without any further comment.
+// We always conservatively assume that all Mobilizer methods depend on all of a
+// Mobilizer's Parameters.
+//
+// A mobilizer is FORBIDDEN from being time- or input-dependent. (The context
+// provides access to the current simulation time and input port values, but
+// the mobilizer must not use that information.)
+//
 // @tparam_default_scalar
 template <typename T>
 class Mobilizer : public MultibodyElement<T> {
  public:
-  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(Mobilizer)
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(Mobilizer);
 
   // The minimum amount of information that we need to define a %Mobilizer is
-  // the knowledge of the inboard and outboard frames it connects.
+  //   - the mobilized body (Mobod) that defines its topology within the
+  //     SpanningForest, and
+  //   - the specific Frames of the inboard and outboard Links that form
+  //     the inboard F frame and outboard M frame for this Mobilizer.
+  //
   // Subclasses of %Mobilizer are therefore required to provide this
   // information in their respective constructors.
   // @throws std::exception if `inboard_frame` and `outboard_frame`
   // reference the same frame object.
-  Mobilizer(const Frame<T>& inboard_frame,
-            const Frame<T>& outboard_frame) :
-      inboard_frame_(inboard_frame), outboard_frame_(outboard_frame) {
-    // Verify they are not the same frame.
-    if (&inboard_frame == &outboard_frame) {
+  // TODO(sherm1) Since the Mobod and Frames are required for all Mobilizers,
+  //  the concrete classes shouldn't have to deal with them. Make the base
+  //  class take care of those for construction and scalar conversion.
+  Mobilizer(const SpanningForest::Mobod& mobod, const Frame<T>& inboard_frame,
+            const Frame<T>& outboard_frame)
+      : mobod_(mobod),
+        inboard_frame_(inboard_frame),
+        outboard_frame_(outboard_frame) {
+    // Verify they are not the same frame unless this is the dummy World
+    // Mobilizer. Don't reference the Mobod if the frames are OK to permit
+    // some low-level mobilizer tests to use a dummy Mobod.
+    const bool frames_are_different = &inboard_frame != &outboard_frame;
+    if (!frames_are_different && !mobod.is_world()) {
       throw std::runtime_error(
           "The provided inboard and outboard frames reference the same object");
     }
   }
 
+  ~Mobilizer() override;
+
   /// Returns this element's unique index.
-  MobilizerIndex index() const {
-    return this->template index_impl<MobilizerIndex>();
+  MobodIndex index() const {
+    return this->template index_impl<MobodIndex>();
   }
 
   // Returns the number of generalized coordinates granted by this mobilizer.
@@ -243,7 +279,7 @@ class Mobilizer : public MultibodyElement<T> {
   // parameterize free translations; this method would return 7 (a quaternion
   // plus a position vector).
   // @see num_velocities()
-  virtual int num_positions() const = 0;
+  int num_positions() const { return mobod_.nq(); }
 
   // Returns the number of generalized velocities granted by this mobilizer.
   // Given that all physics occurs in the generalized velocities space, the
@@ -254,23 +290,17 @@ class Mobilizer : public MultibodyElement<T> {
   // generalized velocity describes the magnitude of the angular velocity about
   // a given axis between the inboard and outboard frames.
   // @see num_positions()
-  virtual int num_velocities() const = 0;
+  int num_velocities() const { return mobod_.nv(); }
 
   // Returns the index to the first generalized position for this mobilizer
   // within the vector q of generalized positions for the full multibody
   // system.
-  int position_start_in_q() const {
-    DRAKE_DEMAND(this->get_parent_tree().topology_is_valid());
-    return topology_.positions_start;
-  }
+  int position_start_in_q() const { return mobod_.q_start(); }
 
   // Returns the index to the first generalized velocity for this mobilizer
   // within the vector v of generalized velocities for the full multibody
   // system.
-  int velocity_start_in_v() const {
-    DRAKE_DEMAND(this->get_parent_tree().topology_is_valid());
-    return topology_.velocities_start_in_v;
-  }
+  int velocity_start_in_v() const { return mobod_.v_start(); }
 
   /// Returns a string suffix (e.g. to be appended to the name()) to identify
   /// the `k`th position in this mobilizer. Mobilizers with more than one
@@ -302,6 +332,10 @@ class Mobilizer : public MultibodyElement<T> {
   // Returns true if this mobilizer can translate.
   virtual bool can_translate() const = 0;
 
+  // Returns a reference to the mobilized body (Mobod) implemented by this
+  // Mobilizer.
+  const SpanningForest::Mobod& mobod() const { return mobod_; }
+
   // Returns a constant reference to the inboard frame.
   const Frame<T>& inboard_frame() const {
     return inboard_frame_;
@@ -330,10 +364,6 @@ class Mobilizer : public MultibodyElement<T> {
   // Returns `true` if `this` uses a quaternion parametrization of rotations.
   virtual bool has_quaternion_dofs() const { return false; }
 
-  // Returns the topology information for this mobilizer. Users should not
-  // need to call this method since MobilizerTopology is an internal
-  // bookkeeping detail.
-  const MobilizerTopology& get_topology() const { return topology_; }
 
   // @name Methods that define a %Mobilizer
   // @{
@@ -348,7 +378,7 @@ class Mobilizer : public MultibodyElement<T> {
   // generally be different from the identity transformation.
   // In other words, `X_FM_ref = CalcAcrossMobilizerTransform(ref_context)`
   // where `ref_context` is a Context storing a State set to the zero
-  // configuration with set_zero_state().
+  // configuration with SetZeroState().
   // In addition, all generalized velocities are set to zero in the _zero_
   // state.
   //
@@ -363,8 +393,8 @@ class Mobilizer : public MultibodyElement<T> {
   // Note that the zero state may fall outside of the limits for any joints
   // associated with this mobilizer.
   // @see set_default_state().
-  virtual void set_zero_state(const systems::Context<T>& context,
-                              systems::State<T>* state) const = 0;
+  virtual void SetZeroState(const systems::Context<T>& context,
+                            systems::State<T>* state) const = 0;
 
   // Sets the `state` to the _default_ state (position and velocity) for
   // `this` mobilizer.  For example, the zero state for our standard IIWA
@@ -554,8 +584,7 @@ class Mobilizer : public MultibodyElement<T> {
       const Eigen::Ref<const VectorX<T>>& q_array) const {
     DRAKE_DEMAND(
         q_array.size() == this->get_parent_tree().num_positions());
-    return q_array.segment(topology_.positions_start,
-                           topology_.num_positions);
+    return q_array.segment(position_start_in_q(), num_positions());
   }
 
   // Mutable version of get_positions_from_array().
@@ -564,8 +593,7 @@ class Mobilizer : public MultibodyElement<T> {
     DRAKE_DEMAND(q_array != nullptr);
     DRAKE_DEMAND(
         q_array->size() == this->get_parent_tree().num_positions());
-    return q_array->segment(topology_.positions_start,
-                            topology_.num_positions);
+    return q_array->segment(position_start_in_q(), num_positions());
   }
 
   // Returns a const Eigen expression of the vector of generalized velocities
@@ -576,8 +604,7 @@ class Mobilizer : public MultibodyElement<T> {
   get_velocities_from_array(const Eigen::Ref<const VectorX<T>>& v_array) const {
     DRAKE_DEMAND(
         v_array.size() == this->get_parent_tree().num_velocities());
-    return v_array.segment(topology_.velocities_start_in_v,
-                           topology_.num_velocities);
+    return v_array.segment(velocity_start_in_v(), num_velocities());
   }
 
   // Mutable version of get_velocities_from_array().
@@ -586,8 +613,7 @@ class Mobilizer : public MultibodyElement<T> {
     DRAKE_DEMAND(v_array != nullptr);
     DRAKE_DEMAND(
         v_array->size() == this->get_parent_tree().num_velocities());
-    return v_array->segment(topology_.velocities_start_in_v,
-                            topology_.num_velocities);
+    return v_array->segment(velocity_start_in_v(), num_velocities());
   }
 
   // Returns a const Eigen expression of the vector of generalized
@@ -708,9 +734,9 @@ class Mobilizer : public MultibodyElement<T> {
         this->DeclareAbstractParameter(tree_system, Value<bool>(false));
   }
 
-  // Implementation for MultibodyElement::DoDeclareParameters().
+  // Implementation for MultibodyElement::DoSetDefaultParameters().
   void DoSetDefaultParameters(systems::Parameters<T>* parameters) const final {
-    // TODO(joemasterjonh): Consider exposing a default locked model value.
+    // TODO(joemasterjohn): Consider exposing a default locked model value.
     parameters->template get_mutable_abstract_parameter<bool>(
         is_locked_parameter_index_) = false;
   }
@@ -719,13 +745,13 @@ class Mobilizer : public MultibodyElement<T> {
   // Implementation for MultibodyElement::DoSetTopology().
   // At MultibodyTree::Finalize() time, each mobilizer retrieves its topology
   // from the parent MultibodyTree.
-  void DoSetTopology(const MultibodyTreeTopology& tree_topology) final {
-    topology_ = tree_topology.get_mobilizer(this->index());
+  void DoSetTopology(const MultibodyTreeTopology&) final {
+    // Mobod provides topology info at construction.
   }
 
+  const SpanningForest::Mobod& mobod_;  // Topology information.
   const Frame<T>& inboard_frame_;
   const Frame<T>& outboard_frame_;
-  MobilizerTopology topology_;
 
   // System parameter index for `this` mobilizer's lock state stored in a
   // context.

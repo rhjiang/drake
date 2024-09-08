@@ -7,6 +7,7 @@
 #include <utility>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 #include "drake/common/autodiff.h"
 #include "drake/common/default_scalars.h"
@@ -37,6 +38,7 @@ using internal::kElastic;
 using internal::kFriction;
 using internal::kHcDissipation;
 using internal::kHydroGroup;
+using internal::kMargin;
 using internal::kMaterialGroup;
 using internal::kPointStiffness;
 using internal::kRelaxationTime;
@@ -251,6 +253,7 @@ bool BackfillDefaults(ProximityProperties* properties,
                      defaults.hunt_crossley_dissipation);
   result |= backfill(kMaterialGroup, kRelaxationTime, defaults.relaxation_time);
   result |= backfill(kMaterialGroup, kPointStiffness, defaults.point_stiffness);
+  result |= backfill(kHydroGroup, kMargin, defaults.margin);
   if (defaults.static_friction.has_value()) {
     // DefaultProximityProperties::ValidateOrThrow() enforces invariants on
     // friction quantities.
@@ -1309,13 +1312,20 @@ template <typename T>
 void GeometryState<T>::AssignRole(SourceId source_id, GeometryId geometry_id,
                                   IllustrationProperties properties,
                                   RoleAssign assign) {
+  InternalGeometry& geometry =
+      ValidateRoleAssign(source_id, geometry_id, Role::kIllustration, assign);
+
+  // We don't warn until after all the error checking has already happened.
   if (properties.HasProperty("phong", "diffuse_map")) {
     static logging::Warn log_once(
         "Explicitly defined values for the ('phong', 'diffuse_map') property "
         "are not currently used in illustration roles -- only perception "
-        "roles");
+        "roles. This warning is only shown during SceneGraph's first encounter "
+        "with an ignored 'diffuse_map', which occurred with the geometry named "
+        "'{}' on a geometry frame named '{}'; "
+        "further encounters will be silently ignored.",
+        GetName(geometry_id), GetName(GetFrameId(geometry_id)));
   }
-
   // TODO(SeanCurtis-TRI): We want to remove this warning. For that to happen,
   // we need systems dependent on illustration properties to recognize if there
   // has been a change since last they processed the state. The simplest way to
@@ -1332,9 +1342,6 @@ void GeometryState<T>::AssignRole(SourceId source_id, GeometryId geometry_id,
         "initialization to have an effect. When in doubt, after making "
         "property changes, force the visualizer to re-initialize via its API.");
   }
-
-  InternalGeometry& geometry =
-      ValidateRoleAssign(source_id, geometry_id, Role::kIllustration, assign);
 
   geometry_version_.modify_illustration();
 
@@ -2193,7 +2200,7 @@ template GeometryState<Expression>::GeometryState(const GeometryState<AutoDiffXd
 }  // namespace drake
 
 DRAKE_DEFINE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
-    class ::drake::geometry::GeometryState)
+    class ::drake::geometry::GeometryState);
 DRAKE_DEFINE_FUNCTION_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
     (&drake::geometry::internal::DrivenMeshData::
-         template SetControlMeshPositions<T>))
+         template SetControlMeshPositions<T>));

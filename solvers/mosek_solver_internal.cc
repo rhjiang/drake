@@ -13,6 +13,7 @@
 namespace drake {
 namespace solvers {
 namespace internal {
+namespace {
 // Given a vector of triplets (which might contain duplicated entries in the
 // matrix), returns the vector of rows, columns and values.
 void ConvertTripletsToVectors(
@@ -37,6 +38,7 @@ void ConvertTripletsToVectors(
     }
   }
 }
+}  // namespace
 
 size_t MatrixVariableEntry::get_next_id() {
   static never_destroyed<std::atomic<int>> next_id(0);
@@ -1069,8 +1071,9 @@ MSKrescodee MosekSolverProgram::AddQuadraticCost(
   for (int j = 0; j < Q_quadratic_vars.outerSize(); ++j) {
     for (Eigen::SparseMatrix<double>::InnerIterator it(Q_quadratic_vars, j); it;
          ++it) {
-      Q_lower_triplets.emplace_back(var_indices[it.row()],
-                                    var_indices[it.col()], it.value());
+      int row = std::max(var_indices[it.row()], var_indices[it.col()]);
+      int col = std::min(var_indices[it.row()], var_indices[it.col()]);
+      Q_lower_triplets.emplace_back(row, col, it.value());
     }
   }
   std::vector<MSKint32t> qrow, qcol;

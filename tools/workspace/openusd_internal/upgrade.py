@@ -13,6 +13,7 @@ SUBDIRS = [
     "pxr/base/arch",
     "pxr/base/gf",
     "pxr/base/js",
+    "pxr/base/pegtl",
     "pxr/base/plug",
     "pxr/base/tf",
     "pxr/base/trace",
@@ -26,6 +27,7 @@ SUBDIRS = [
     "pxr/usd/sdr",
     "pxr/usd/usd",
     "pxr/usd/usdGeom",
+    "pxr/usd/usdPhysics",
     "pxr/usd/usdShade",
     "pxr/usd/usdUtils",
 ]

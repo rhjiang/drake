@@ -36,7 +36,7 @@ namespace internal {
 template <typename T>
 class RevoluteMobilizer final : public MobilizerImpl<T, 1, 1> {
  public:
-  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(RevoluteMobilizer)
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(RevoluteMobilizer);
 
   // Constructor for a %RevoluteMobilizer between the inboard frame F
   // `inboard_frame_F` and the outboard frame M `outboard_frame_F` granting a
@@ -45,14 +45,17 @@ class RevoluteMobilizer final : public MobilizerImpl<T, 1, 1> {
   // @pre `axis_F` must be a non-zero vector with norm at least root square of
   // machine epsilon. This vector can have any length (subject to the norm
   // restriction above), only the direction is used.
-  RevoluteMobilizer(const Frame<T>& inboard_frame_F,
+  RevoluteMobilizer(const SpanningForest::Mobod& mobod,
+                    const Frame<T>& inboard_frame_F,
                     const Frame<T>& outboard_frame_M,
                     const Vector3<double>& axis_F) :
-      MobilizerBase(inboard_frame_F, outboard_frame_M), axis_F_(axis_F) {
+      MobilizerBase(mobod, inboard_frame_F, outboard_frame_M), axis_F_(axis_F) {
     double kEpsilon = std::sqrt(std::numeric_limits<double>::epsilon());
     DRAKE_DEMAND(!axis_F_.isZero(kEpsilon));
     axis_F_.normalize();
   }
+
+  ~RevoluteMobilizer() final;
 
   // Overloads to define the suffix names for the position and velocity
   // elements.
@@ -79,7 +82,7 @@ class RevoluteMobilizer final : public MobilizerImpl<T, 1, 1> {
   //                    belongs to.
   // @param[in] angle The desired angle in radians.
   // @returns a constant reference to `this` mobilizer.
-  const RevoluteMobilizer<T>& set_angle(
+  const RevoluteMobilizer<T>& SetAngle(
       systems::Context<T>* context, const T& angle) const;
 
   // Gets the rate of change, in radians per second, of `this` mobilizer's
@@ -99,7 +102,7 @@ class RevoluteMobilizer final : public MobilizerImpl<T, 1, 1> {
   // @param[in] theta_dot The desired rate of change of `this` mobilizer's
   // angle in radians per second.
   // @returns a constant reference to `this` mobilizer.
-  const RevoluteMobilizer<T>& set_angular_rate(
+  const RevoluteMobilizer<T>& SetAngularRate(
       systems::Context<T> *context, const T& theta_dot) const;
 
   // Computes the across-mobilizer transform `X_FM(q)` between the inboard
@@ -201,4 +204,4 @@ class RevoluteMobilizer final : public MobilizerImpl<T, 1, 1> {
 }  // namespace drake
 
 DRAKE_DECLARE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
-    class ::drake::multibody::internal::RevoluteMobilizer)
+    class ::drake::multibody::internal::RevoluteMobilizer);

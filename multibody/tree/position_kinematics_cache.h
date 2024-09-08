@@ -32,7 +32,7 @@ namespace internal {
 template <typename T>
 class PositionKinematicsCache {
  public:
-  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(PositionKinematicsCache)
+  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(PositionKinematicsCache);
 
   template <typename U>
   using RigidTransform = drake::math::RigidTransform<U>;
@@ -147,9 +147,6 @@ class PositionKinematicsCache {
     X_FM_pool_.resize(num_mobods_);
     X_FM_pool_[world_mobod_index()] = NaNPose();  // It should never be used.
 
-    X_MB_pool_.resize(num_mobods_);
-    X_MB_pool_[world_mobod_index()] = NaNPose();  // It should never be used.
-
     p_PoBo_W_pool_.resize(num_mobods_);
     // p_PoBo_W for the world body should never be used.
     p_PoBo_W_pool_[world_mobod_index()].setConstant(
@@ -173,7 +170,6 @@ class PositionKinematicsCache {
   X_PoolType X_WB_pool_;
   X_PoolType X_PB_pool_;
   X_PoolType X_FM_pool_;
-  X_PoolType X_MB_pool_;
   Vector3PoolType p_PoBo_W_pool_;
 };
 
@@ -182,4 +178,4 @@ class PositionKinematicsCache {
 }  // namespace drake
 
 DRAKE_DECLARE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
-    class ::drake::multibody::internal::PositionKinematicsCache)
+    class ::drake::multibody::internal::PositionKinematicsCache);

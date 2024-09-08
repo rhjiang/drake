@@ -4,6 +4,7 @@
 #include "drake/bindings/pydrake/common/default_scalars_pybind.h"
 #include "drake/bindings/pydrake/common/type_pack.h"
 #include "drake/bindings/pydrake/documentation_pybind.h"
+#include "drake/bindings/pydrake/geometry/geometry_py.h"
 #include "drake/geometry/proximity/obj_to_surface_mesh.h"
 #include "drake/geometry/proximity/polygon_surface_mesh.h"
 #include "drake/geometry/proximity/triangle_surface_mesh.h"
@@ -190,7 +191,7 @@ void DoMeshDependentDefinitions(py::module m) {
       },
       py::arg("filename"), py::arg("scale") = 1.0,
       // N.B. We have not bound the optional "on_warning" argument.
-      doc.ReadObjToTriangleSurfaceMesh.doc_3args_filename_scale_on_warning);
+      doc.ReadObjToTriangleSurfaceMesh.doc_3args);
 }
 
 }  // namespace

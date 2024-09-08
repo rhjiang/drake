@@ -7,12 +7,16 @@
 #include "drake/common/drake_assert.h"
 #include "drake/common/eigen_types.h"
 #include "drake/math/roll_pitch_yaw.h"
+#include "drake/math/rotation_matrix.h"
 #include "drake/multibody/tree/multibody_tree.h"
 #include "drake/multibody/tree/rigid_body.h"
 
 namespace drake {
 namespace multibody {
 namespace internal {
+
+template <typename T>
+RpyFloatingMobilizer<T>::~RpyFloatingMobilizer() = default;
 
 template <typename T>
 std::string RpyFloatingMobilizer<T>::position_suffix(
@@ -111,7 +115,7 @@ RpyFloatingMobilizer<T>::SetTranslation(systems::Context<T>* context,
 
 template <typename T>
 const RpyFloatingMobilizer<T>&
-RpyFloatingMobilizer<T>::set_angular_velocity(
+RpyFloatingMobilizer<T>::SetAngularVelocity(
     systems::Context<T>* context, const Vector3<T>& w_FM) const {
   auto v = this->GetMutableVelocities(context).template head<3>();
   v = w_FM;
@@ -120,7 +124,7 @@ RpyFloatingMobilizer<T>::set_angular_velocity(
 
 template <typename T>
 const RpyFloatingMobilizer<T>&
-RpyFloatingMobilizer<T>::set_translational_velocity(
+RpyFloatingMobilizer<T>::SetTranslationalVelocity(
     systems::Context<T>* context, const Vector3<T>& v_FM) const {
   auto v = this->GetMutableVelocities(context).template tail<3>();
   v = v_FM;
@@ -458,7 +462,8 @@ RpyFloatingMobilizer<T>::TemplatedDoCloneToScalar(
   const Frame<ToScalar>& outboard_frame_clone =
       tree_clone.get_variant(this->outboard_frame());
   return std::make_unique<RpyFloatingMobilizer<ToScalar>>(
-      inboard_frame_clone, outboard_frame_clone);
+      tree_clone.get_mobod(this->mobod().index()), inboard_frame_clone,
+      outboard_frame_clone);
 }
 
 template <typename T>
@@ -487,4 +492,4 @@ RpyFloatingMobilizer<T>::DoCloneToScalar(
 }  // namespace drake
 
 DRAKE_DEFINE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
-    class ::drake::multibody::internal::RpyFloatingMobilizer)
+    class ::drake::multibody::internal::RpyFloatingMobilizer);

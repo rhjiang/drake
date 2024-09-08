@@ -15,6 +15,9 @@ namespace multibody {
 namespace internal {
 
 template <typename T>
+RpyBallMobilizer<T>::~RpyBallMobilizer() = default;
+
+template <typename T>
 std::string RpyBallMobilizer<T>::position_suffix(
   int position_index_in_mobilizer) const {
   switch (position_index_in_mobilizer) {
@@ -73,13 +76,13 @@ Vector3<T> RpyBallMobilizer<T>::get_angular_velocity(
 }
 
 template <typename T>
-const RpyBallMobilizer<T>& RpyBallMobilizer<T>::set_angular_velocity(
+const RpyBallMobilizer<T>& RpyBallMobilizer<T>::SetAngularVelocity(
     systems::Context<T>* context, const Vector3<T>& w_FM) const {
-  return set_angular_velocity(*context, w_FM, &context->get_mutable_state());
+  return SetAngularVelocity(*context, w_FM, &context->get_mutable_state());
 }
 
 template <typename T>
-const RpyBallMobilizer<T>& RpyBallMobilizer<T>::set_angular_velocity(
+const RpyBallMobilizer<T>& RpyBallMobilizer<T>::SetAngularVelocity(
     const systems::Context<T>&, const Vector3<T>& w_FM,
     systems::State<T>* state) const {
   auto v = this->get_mutable_velocities(state);
@@ -377,7 +380,8 @@ RpyBallMobilizer<T>::TemplatedDoCloneToScalar(
   const Frame<ToScalar>& outboard_frame_clone =
       tree_clone.get_variant(this->outboard_frame());
   return std::make_unique<RpyBallMobilizer<ToScalar>>(
-      inboard_frame_clone, outboard_frame_clone);
+      tree_clone.get_mobod(this->mobod().index()), inboard_frame_clone,
+      outboard_frame_clone);
 }
 
 template <typename T>
@@ -405,4 +409,4 @@ RpyBallMobilizer<T>::DoCloneToScalar(
 }  // namespace drake
 
 DRAKE_DEFINE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
-    class ::drake::multibody::internal::RpyBallMobilizer)
+    class ::drake::multibody::internal::RpyBallMobilizer);

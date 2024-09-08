@@ -9,6 +9,9 @@ namespace multibody {
 namespace internal {
 
 template <typename T>
+WeldMobilizer<T>::~WeldMobilizer() = default;
+
+template <typename T>
 math::RigidTransform<T> WeldMobilizer<T>::CalcAcrossMobilizerTransform(
     const systems::Context<T>&) const { return X_FM_.cast<T>(); }
 
@@ -67,15 +70,15 @@ void WeldMobilizer<T>::MapQDotToVelocity(
 
 template <typename T>
 template <typename ToScalar>
-std::unique_ptr<Mobilizer<ToScalar>>
-WeldMobilizer<T>::TemplatedDoCloneToScalar(
+std::unique_ptr<Mobilizer<ToScalar>> WeldMobilizer<T>::TemplatedDoCloneToScalar(
     const MultibodyTree<ToScalar>& tree_clone) const {
   const Frame<ToScalar>& inboard_frame_clone =
       tree_clone.get_variant(this->inboard_frame());
   const Frame<ToScalar>& outboard_frame_clone =
       tree_clone.get_variant(this->outboard_frame());
   return std::make_unique<WeldMobilizer<ToScalar>>(
-      inboard_frame_clone, outboard_frame_clone, this->get_X_FM());
+      tree_clone.get_mobod(this->mobod().index()), inboard_frame_clone,
+      outboard_frame_clone, this->get_X_FM());
 }
 
 template <typename T>
@@ -102,4 +105,4 @@ WeldMobilizer<T>::DoCloneToScalar(
 }  // namespace drake
 
 DRAKE_DEFINE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
-    class ::drake::multibody::internal::WeldMobilizer)
+    class ::drake::multibody::internal::WeldMobilizer);

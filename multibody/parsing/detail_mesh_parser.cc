@@ -42,12 +42,10 @@ void CaptureName(void* storage, const char* parsed_name) {
 // parsing failure, the return value contains a null mesh.
 NamedMesh DoGetObjMesh(const DiagnosticPolicy& diagnostic,
                        std::istream* input_stream,
-                       const std::string& mtl_basedir) {
+                       std::string_view description) {
   std::optional<TriangleSurfaceMesh<double>> mesh =
-      geometry::internal::DoReadObjToSurfaceMesh(input_stream, 1.0,
-                                                 mtl_basedir,
-                                                 {.diagnostic = diagnostic,
-                                                  .allowed_shape_count = 1});
+      geometry::internal::DoReadObjToSurfaceMesh(input_stream, 1.0, diagnostic,
+                                                 description);
 
   if (!mesh.has_value()) {
     return {};
@@ -81,12 +79,7 @@ NamedMesh GetMeshFromFile(const DiagnosticPolicy& diagnostic,
     diagnostic.Error(fmt::format("Cannot open file '{}'", filename));
     return {};
   }
-  // Failure to provide the directory of the obj file as the base material
-  // library directory will cause OBJs with MTL files referenced by relative
-  // paths to spew warnings.
-  const std::string mtl_basedir =
-      std::filesystem::path(filename).parent_path().string() + "/";
-  return DoGetObjMesh(diagnostic, &input_stream, mtl_basedir);
+  return DoGetObjMesh(diagnostic, &input_stream, filename);
 }
 
 }  // namespace
@@ -128,8 +121,8 @@ std::optional<ModelInstanceIndex> AddModelFromMesh(
   const ModelInstanceIndex model_instance =
       plant.AddModelInstance(model_instance_name);
 
-  const SpatialInertia<double> M_BBo_B =
-      CalcSpatialInertia(*named_mesh.mesh, 1000.0 /* kg/m3 */);
+  const SpatialInertia<double> M_BBo_B = CalcSpatialInertia(
+      *named_mesh.mesh, 1000.0 /* water density ≈ 1000 kg/m³ */);
   const RigidBody<double>& body =
       plant.AddRigidBody(candidate_name, model_instance, M_BBo_B);
 

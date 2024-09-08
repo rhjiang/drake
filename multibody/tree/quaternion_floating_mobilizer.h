@@ -33,7 +33,7 @@ namespace internal {
 template <typename T>
 class QuaternionFloatingMobilizer final : public MobilizerImpl<T, 7, 6> {
  public:
-  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(QuaternionFloatingMobilizer)
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(QuaternionFloatingMobilizer);
 
   // Constructor for a %QuaternionFloatingMobilizer granting six degrees of
   // freedom to an outboard frame M with respect to an inboard frame F. The
@@ -44,9 +44,12 @@ class QuaternionFloatingMobilizer final : public MobilizerImpl<T, 7, 6> {
   //   the inboard frame F.
   // @param[in] outboard_frame_M
   //   the outboard frame M which can move freely with respect to frame F.
-  QuaternionFloatingMobilizer(const Frame<T>& inboard_frame_F,
-                const Frame<T>& outboard_frame_M) :
-      MobilizerBase(inboard_frame_F, outboard_frame_M) {}
+  QuaternionFloatingMobilizer(const SpanningForest::Mobod& mobod,
+                              const Frame<T>& inboard_frame_F,
+                              const Frame<T>& outboard_frame_M) :
+      MobilizerBase(mobod, inboard_frame_F, outboard_frame_M) {}
+
+  ~QuaternionFloatingMobilizer() final;
 
   bool is_floating() const final { return true; }
 
@@ -153,12 +156,12 @@ class QuaternionFloatingMobilizer final : public MobilizerImpl<T, 7, 6> {
   // @param[in] w_FM
   //   The desired angular velocity of frame M in F, expressed in F.
   // @returns a constant reference to `this` mobilizer.
-  const QuaternionFloatingMobilizer<T>& set_angular_velocity(
+  const QuaternionFloatingMobilizer<T>& SetAngularVelocity(
       systems::Context<T>* context, const Vector3<T>& w_FM) const;
 
-  // Alternative signature to set_angular_velocity(context, w_FM) to set
+  // Alternative signature to SetAngularVelocity(context, w_FM) to set
   // `state` to store the angular velocity `w_FM` of M in F.
-  const QuaternionFloatingMobilizer<T>& set_angular_velocity(
+  const QuaternionFloatingMobilizer<T>& SetAngularVelocity(
       const systems::Context<T>&, const Vector3<T>& w_FM,
       systems::State<T>* state) const;
 
@@ -179,12 +182,12 @@ class QuaternionFloatingMobilizer final : public MobilizerImpl<T, 7, 6> {
   // @param[in] v_FM
   //   The desired translational velocity of frame M in F, expressed in F.
   // @returns a constant reference to `this` mobilizer.
-  const QuaternionFloatingMobilizer<T>& set_translational_velocity(
+  const QuaternionFloatingMobilizer<T>& SetTranslationalVelocity(
       systems::Context<T>* context, const Vector3<T>& v_FM) const;
 
-  // Alternative signature to set_translational_velocity(context, v_FM) to set
+  // Alternative signature to SetTranslationalVelocity(context, v_FM) to set
   // `state` to store the translational velocity `v_FM` of M in F.
-  const QuaternionFloatingMobilizer<T>& set_translational_velocity(
+  const QuaternionFloatingMobilizer<T>& SetTranslationalVelocity(
       const systems::Context<T>&, const Vector3<T>& v_FM,
       systems::State<T>* state) const;
 
@@ -283,4 +286,4 @@ class QuaternionFloatingMobilizer final : public MobilizerImpl<T, 7, 6> {
 }  // namespace drake
 
 DRAKE_DECLARE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
-    class ::drake::multibody::internal::QuaternionFloatingMobilizer)
+    class ::drake::multibody::internal::QuaternionFloatingMobilizer);

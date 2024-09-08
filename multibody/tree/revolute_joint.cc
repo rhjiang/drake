@@ -37,6 +37,9 @@ RevoluteJoint<T>::RevoluteJoint(const std::string& name,
 }
 
 template <typename T>
+RevoluteJoint<T>::~RevoluteJoint() = default;
+
+template <typename T>
 const std::string& RevoluteJoint<T>::type_name() const {
   static const never_destroyed<std::string> name{kTypeName};
   return name.access();
@@ -88,10 +91,14 @@ std::unique_ptr<Joint<symbolic::Expression>> RevoluteJoint<T>::DoCloneToScalar(
 // in the header file.
 template <typename T>
 std::unique_ptr<typename Joint<T>::BluePrint>
-RevoluteJoint<T>::MakeImplementationBlueprint() const {
+RevoluteJoint<T>::MakeImplementationBlueprint(
+    const internal::SpanningForest::Mobod& mobod) const {
   auto blue_print = std::make_unique<typename Joint<T>::BluePrint>();
+  const auto [inboard_frame, outboard_frame] =
+      this->tree_frames(mobod.is_reversed());
+  // TODO(sherm1) The mobilizer needs to be reversed, not just the frames.
   auto revolute_mobilizer = std::make_unique<internal::RevoluteMobilizer<T>>(
-      this->frame_on_parent(), this->frame_on_child(), axis_);
+      mobod, *inboard_frame, *outboard_frame, axis_);
   revolute_mobilizer->set_default_position(this->default_positions());
   blue_print->mobilizer = std::move(revolute_mobilizer);
   return blue_print;
@@ -101,4 +108,4 @@ RevoluteJoint<T>::MakeImplementationBlueprint() const {
 }  // namespace drake
 
 DRAKE_DEFINE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
-    class ::drake::multibody::RevoluteJoint)
+    class ::drake::multibody::RevoluteJoint);

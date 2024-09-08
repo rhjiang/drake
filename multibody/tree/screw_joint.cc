@@ -38,6 +38,9 @@ ScrewJoint<T>::ScrewJoint(const std::string& name,
 }
 
 template <typename T>
+ScrewJoint<T>::~ScrewJoint() = default;
+
+template <typename T>
 const std::string& ScrewJoint<T>::type_name() const {
   static const never_destroyed<std::string> name{kTypeName};
   return name.access();
@@ -92,11 +95,14 @@ std::unique_ptr<Joint<symbolic::Expression>> ScrewJoint<T>::DoCloneToScalar(
 // in the header file.
 template <typename T>
 std::unique_ptr<typename Joint<T>::BluePrint>
-ScrewJoint<T>::MakeImplementationBlueprint() const {
+ScrewJoint<T>::MakeImplementationBlueprint(
+    const internal::SpanningForest::Mobod& mobod) const {
   auto blue_print = std::make_unique<typename Joint<T>::BluePrint>();
+  const auto [inboard_frame, outboard_frame] =
+      this->tree_frames(mobod.is_reversed());
+  // TODO(sherm1) The mobilizer needs to be reversed, not just the frames.
   auto screw_mobilizer = std::make_unique<internal::ScrewMobilizer<T>>(
-      this->frame_on_parent(), this->frame_on_child(), this->screw_axis(),
-      screw_pitch_);
+      mobod, *inboard_frame, *outboard_frame, this->screw_axis(), screw_pitch_);
   screw_mobilizer->set_default_position(this->default_positions());
   blue_print->mobilizer = std::move(screw_mobilizer);
   return blue_print;
@@ -106,4 +112,4 @@ ScrewJoint<T>::MakeImplementationBlueprint() const {
 }  // namespace drake
 
 DRAKE_DEFINE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
-    class ::drake::multibody::ScrewJoint)
+    class ::drake::multibody::ScrewJoint);

@@ -26,7 +26,7 @@ namespace internal {
  rotation about axis â of frame F.
  Zero θ defines the "zero configuration", which corresponds to frames F and
  M being coincident (axes are aligned and origins are co-located),
- see set_zero_state(). The translation along â depends on and is proportional
+ see SetZeroState(). The translation along â depends on and is proportional
  to the rotation θ. Their relation is defined by a screw pitch.
  The translation is defined to be positive in the direction of
  frame F's axis â and the rotation θ is defined to be positive according
@@ -39,7 +39,7 @@ namespace internal {
 template <typename T>
 class ScrewMobilizer final : public MobilizerImpl<T, 1, 1> {
  public:
-  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(ScrewMobilizer)
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(ScrewMobilizer);
 
   /* Constructor for a %ScrewMobilizer between an inboard frame F and
      an outboard frame M  granting one translational and one rotational degrees
@@ -57,15 +57,18 @@ class ScrewMobilizer final : public MobilizerImpl<T, 1, 1> {
                           any value of the generalized coordinate.
    @pre `axis` must be a non-zero vector with norm at least root square of
    machine epsilon. */
-  ScrewMobilizer(const Frame<T>& inboard_frame_F,
+  ScrewMobilizer(const SpanningForest::Mobod& mobod,
+                 const Frame<T>& inboard_frame_F,
                  const Frame<T>& outboard_frame_M,
                  const Vector3<double>& axis, double screw_pitch)
-      : MobilizerBase(inboard_frame_F, outboard_frame_M),
+      : MobilizerBase(mobod, inboard_frame_F, outboard_frame_M),
         screw_pitch_(screw_pitch) {
     const double kEpsilon = std::numeric_limits<double>::epsilon();
     DRAKE_DEMAND(!axis.isZero(kEpsilon));
     axis_ = axis.normalized();
   }
+
+  ~ScrewMobilizer() final;
 
   // Overloads to define the suffix names for the position and velocity
   // elements.
@@ -103,8 +106,8 @@ class ScrewMobilizer final : public MobilizerImpl<T, 1, 1> {
    @returns A constant reference to `this` mobilizer.
    @throws std::exception if the screw_pitch is very near zero and
            |translation| > kEpsilon. */
-  const ScrewMobilizer<T>& set_translation(systems::Context<T>* context,
-                                           const T& translation) const;
+  const ScrewMobilizer<T>& SetTranslation(systems::Context<T>* context,
+                                          const T& translation) const;
 
   /* Retrieves from `context` the angle θ which describes the orientation for
    `this` mobilizer as documented in this class's documentation.
@@ -119,8 +122,8 @@ class ScrewMobilizer final : public MobilizerImpl<T, 1, 1> {
    @param[in] context The context of the model this mobilizer belongs to.
    @param[in] angle The desired angle in radians.
    @returns a constant reference to `this` mobilizer. */
-  const ScrewMobilizer<T>& set_angle(systems::Context<T>* context,
-                                     const T& angle) const;
+  const ScrewMobilizer<T>& SetAngle(systems::Context<T>* context,
+                                    const T& angle) const;
 
   /* Retrieves from `context` the rate of change, in meters per second, of
    `this` mobilizer's translation (see get_translation()).
@@ -139,8 +142,8 @@ class ScrewMobilizer final : public MobilizerImpl<T, 1, 1> {
    @returns A constant reference to `this` mobilizer.
    @throws std::exception if the screw_pitch is very near zero and
            |vz| > kEpsilon. */
-  const ScrewMobilizer<T>& set_translation_rate(systems::Context<T>* context,
-                                                const T& vz) const;
+  const ScrewMobilizer<T>& SetTranslationRate(systems::Context<T>* context,
+                                              const T& vz) const;
 
   /* Retrieves from `context` the rate of change, in radians per second, of
    `this` mobilizer's angle (see get_angle()).
@@ -154,8 +157,8 @@ class ScrewMobilizer final : public MobilizerImpl<T, 1, 1> {
    @param[in] theta_dot The desired rate of change of `this` mobilizer's angle
                         in radians per second.
    @returns A constant reference to `this` mobilizer. */
-  const ScrewMobilizer<T>& set_angular_rate(systems::Context<T>* context,
-                                            const T& theta_dot) const;
+  const ScrewMobilizer<T>& SetAngularRate(systems::Context<T>* context,
+                                          const T& theta_dot) const;
 
   /* Computes the across-mobilizer transform `X_FM(q)` between the inboard
    frame F and the outboard frame M as a function of the configuration q stored
@@ -272,4 +275,4 @@ inline T get_screw_rotation_from_translation(const T& z, double screw_pitch) {
 }  // namespace drake
 
 DRAKE_DECLARE_CLASS_TEMPLATE_INSTANTIATIONS_ON_DEFAULT_SCALARS(
-    class ::drake::multibody::internal::ScrewMobilizer)
+    class ::drake::multibody::internal::ScrewMobilizer);

@@ -23,6 +23,7 @@ namespace internal {
 // for a particular joint object.
 template <typename T>
 class JointImplementationBuilder;
+class MobilizerTester;
 }  // namespace internal
 
 /// A %Joint models the kinematical relationship which characterizes the
@@ -76,7 +77,7 @@ class JointImplementationBuilder;
 template <typename T>
 class Joint : public MultibodyElement<T> {
  public:
-  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(Joint)
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(Joint);
 
   /// Creates a joint between two Frame objects which imposes a given kinematic
   /// relation between frame F attached on the parent body P and frame M
@@ -173,10 +174,22 @@ class Joint : public MultibodyElement<T> {
               pos_upper_limits, vel_lower_limits, vel_upper_limits,
               acc_lower_limits, acc_upper_limits) {}
 
-  virtual ~Joint() {}
+  virtual ~Joint();
 
   /// Returns this element's unique index.
   JointIndex index() const { return this->template index_impl<JointIndex>(); }
+
+  /// Returns this element's unique ordinal. The joint's ordinal is a unique
+  /// index into contiguous containers that have an entry for each Joint, such
+  /// as the vector valued reaction forces (see
+  /// MultibodyPlant::get_reaction_forces_output_port()). The ordinal value will
+  /// be updated (if needed) when joints are removed from the parent plant so
+  /// that the set of ordinal values is a bijection with [0, num_joints()).
+  /// Ordinals are assigned in the order that joints are added to the plant,
+  /// thus a set of joints sorted by ordinal has the same ordering as if it were
+  /// sorted by JointIndex. If joints have been removed from the plant, do *not*
+  /// use index() to access contiguous containers with entries per Joint.
+  int ordinal() const { return this->ordinal_impl(); }
 
   /// Returns the name of this joint.
   const std::string& name() const { return name_; }
@@ -523,9 +536,6 @@ class Joint : public MultibodyElement<T> {
   /// N⋅m⋅s. Refer to each joint's documentation for further details.
   const VectorX<double>& default_damping_vector() const { return damping_; }
 
-  DRAKE_DEPRECATED("2024-06-01", "Use default_damping_vector() instead.")
-  const VectorX<double>& damping_vector() const { return damping_; }
-
   /// Returns the Context dependent damping coefficients stored as parameters in
   /// `context`. Refer to default_damping_vector() for details.
   /// @param[in] context The context storing the state and parameters for the
@@ -793,7 +803,8 @@ class Joint : public MultibodyElement<T> {
   /// This method must be implemented by derived classes in order to provide
   /// JointImplementationBuilder a BluePrint of their internal implementation
   /// JointImplementation.
-  virtual std::unique_ptr<BluePrint> MakeImplementationBlueprint() const = 0;
+  virtual std::unique_ptr<BluePrint> MakeImplementationBlueprint(
+      const internal::SpanningForest::Mobod& mobod) const = 0;
 
   /// Returns a const reference to the internal implementation of `this` joint.
   /// @warning The MultibodyTree model must have already been finalized, or
@@ -808,6 +819,18 @@ class Joint : public MultibodyElement<T> {
   /// Returns whether `this` joint owns a particular implementation.
   /// If the MultibodyTree has been finalized, this will return true.
   bool has_implementation() const { return implementation_ != nullptr; }
+
+ protected:
+  /// Utility for concrete joint implementations to use to select the
+  /// inboard/outboard frames for a tree in the spanning forest, given
+  /// whether they should be reversed from the parent/child frames that are
+  /// members of this Joint object.
+  std::pair<const Frame<T>*, const Frame<T>*> tree_frames(
+      bool use_reversed_mobilizer) const {
+    return use_reversed_mobilizer
+               ? std::make_pair(&frame_on_child(), &frame_on_parent())
+               : std::make_pair(&frame_on_parent(), &frame_on_child());
+  }
 
  private:
   // Make all other Joint<U> objects a friend of Joint<T> so they can make

@@ -1,5 +1,7 @@
 #include "drake/geometry/read_obj.h"
 
+#include <fstream>
+
 #include <fmt/format.h>
 #include <tiny_obj_loader.h>
 
@@ -13,6 +15,8 @@ namespace drake {
 namespace geometry {
 namespace internal {
 namespace {
+
+using drake::internal::DiagnosticPolicy;
 
 // TODO(SeanCurtis-TRI) Move this tinyobj->fcl code into its own library that
 //  can be built and tested separately.
@@ -78,58 +82,72 @@ std::vector<Eigen::Vector3d> TinyObjToFclVertices(
 // The actual number of faces returned will be equal to:
 // mesh.num_face_vertices.size() which *cannot* be easily inferred from the
 // *size* of the returned vector.
-std::vector<int> TinyObjToFclFaces(const tinyobj::mesh_t& mesh) {
-  std::vector<int> faces;
-  faces.reserve(mesh.indices.size() + mesh.num_face_vertices.size());
-  auto iter = mesh.indices.begin();
-  for (int num : mesh.num_face_vertices) {
-    faces.push_back(num);
-    std::for_each(iter, iter + num, [&faces](const tinyobj::index_t& index) {
-      faces.push_back(index.vertex_index);
-    });
-    iter += num;
+std::vector<int> TinyObjToFclFaces(
+    const std::vector<tinyobj::shape_t>& shapes) {
+  // Estimate (to an order of magnitude) how much space we need for face data.
+  int estimated_face_data_size = 0;
+  for (const auto& shape : shapes) {
+    estimated_face_data_size +=
+        shape.mesh.num_face_vertices.size() + shape.mesh.indices.size();
   }
-
+  std::vector<int> faces;
+  faces.reserve(estimated_face_data_size);
+  for (const auto& shape : shapes) {
+    const tinyobj::mesh_t& mesh = shape.mesh;
+    auto iter = mesh.indices.begin();
+    for (int num : mesh.num_face_vertices) {
+      faces.push_back(num);
+      std::for_each(iter, iter + num, [&faces](const tinyobj::index_t& index) {
+        faces.push_back(index.vertex_index);
+      });
+      iter += num;
+    }
+  }
   return faces;
 }
+
 }  // namespace
 
 std::tuple<std::shared_ptr<std::vector<Eigen::Vector3d>>,
            std::shared_ptr<std::vector<int>>, int>
-ReadObjFile(const std::string& filename, double scale, bool triangulate) {
+ReadObjFile(const std::string& filename, double scale, bool triangulate,
+            const DiagnosticPolicy& diagnostic) {
+  std::ifstream f(filename);
+  return ReadObjStream(&f, scale, triangulate, filename, diagnostic);
+}
+
+std::tuple<std::shared_ptr<std::vector<Eigen::Vector3d>>,
+           std::shared_ptr<std::vector<int>>, int>
+ReadObjStream(std::istream* input_stream, double scale, bool triangulate,
+              std::string_view filename_hint,
+              const DiagnosticPolicy& diagnostic) {
   tinyobj::attrib_t attrib;
   std::vector<tinyobj::shape_t> shapes;
   std::vector<tinyobj::material_t> materials;
   std::string warn;
   std::string err;
 
-  // Tinyobj doesn't infer the search directory from the directory containing
-  // the obj file. We have to provide that directory; of course, this assumes
-  // that the material library reference is relative to the obj directory.
-  const size_t pos = filename.find_last_of('/');
-  const std::string obj_folder = filename.substr(0, pos + 1);
-  const char* mtl_basedir = obj_folder.c_str();
+  // We don't need materials, so we won't bother reading them.
+  tinyobj::MaterialReader* mat_reader = nullptr;
 
   bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err,
-                              filename.c_str(), mtl_basedir, triangulate);
+                              input_stream, mat_reader, triangulate);
   if (!ret || !err.empty()) {
-    throw std::runtime_error("Error parsing file '" + filename + "' : " + err);
+    diagnostic.Error(
+        fmt::format("Error parsing file '{}' : {}", filename_hint, err));
+    return {nullptr, nullptr, 0};
   }
   if (!warn.empty()) {
-    drake::log()->warn("Warning parsing file '{}' : {}", filename, warn);
+    diagnostic.Warning(
+        fmt::format("Warning parsing file '{}' : {}", filename_hint, warn));
   }
 
   if (shapes.size() == 0) {
-    throw std::runtime_error(
-        fmt::format("The file parsed contains no objects; only OBJs with "
-                    "a single object are supported. The file could be "
-                    "corrupt, empty, or not an OBJ file. File name: '{}'",
-                    filename));
-  } else if (shapes.size() > 1) {
-    throw std::runtime_error(
-        fmt::format("The OBJ file contains multiple objects; only OBJs with "
-                    "a single object are supported: File name: '{}'",
-                    filename));
+    diagnostic.Error(
+        fmt::format("The file parsed contains no objects; the file could be "
+                    "corrupt, empty, or not an OBJ file. File: '{}'",
+                    filename_hint));
+    return {nullptr, nullptr, 0};
   }
 
   auto vertices = std::make_shared<std::vector<Eigen::Vector3d>>(
@@ -143,12 +161,15 @@ ReadObjFile(const std::string& filename, double scale, bool triangulate) {
   //               n2, v2_0,v2_1,...,v2_n2-1,
   //               ...}
   // where n_i is the number of vertices of face_i.
-  //
-  int num_faces = static_cast<int>(shapes[0].mesh.num_face_vertices.size());
+  int num_faces = 0;
+  for (const tinyobj::shape_t& shape : shapes) {
+    num_faces += shape.mesh.num_face_vertices.size();
+  }
   auto faces =
-      std::make_shared<std::vector<int>>(TinyObjToFclFaces(shapes[0].mesh));
+      std::make_shared<std::vector<int>>(TinyObjToFclFaces(shapes));
   return {vertices, faces, num_faces};
 }
+
 }  // namespace internal
 }  // namespace geometry
 }  // namespace drake

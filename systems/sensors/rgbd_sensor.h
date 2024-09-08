@@ -90,7 +90,7 @@ namespace sensors {
  @ingroup sensor_systems  */
 class RgbdSensor final : public LeafSystem<double> {
  public:
-  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(RgbdSensor)
+  DRAKE_NO_COPY_NO_MOVE_NO_ASSIGN(RgbdSensor);
 
   /** Constructs an %RgbdSensor with fully specified render camera models for
    both color/label and depth cameras.
@@ -133,6 +133,9 @@ class RgbdSensor final : public LeafSystem<double> {
   const geometry::render::DepthRenderCamera& depth_render_camera() const {
     return depth_camera_;
   }
+
+  /** Returns `X_PB`.  */
+  const math::RigidTransformd& X_PB() const { return X_PB_; }
 
   /** Returns `X_BC`.  */
   const math::RigidTransformd& X_BC() const {
