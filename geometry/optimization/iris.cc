@@ -949,17 +949,10 @@ HPolyhedron RayIris(const MultibodyPlant<double>& plant,
             p_AA_guess = result.GetSolution(p_AA);
             p_BB_guess = result.GetSolution(p_BB);
           } else {
-            log()->info("failed to find closest pts");
+            log()->info("failed to find collision pts");
             p_AA_guess = Eigen::Vector3d::Constant(.01);
             p_BB_guess = Eigen::Vector3d::Constant(.01);
-          }
-
-          // Eigen::MatrixXd concatenated_transform(X_WA.rows(), X_WA.cols() + X_WB.cols());
-          // concatenated_transform << X_WA, X_WB;
-
-          // collision_points_prog.AddLinearEqualityConstraint(concatenated_transform, Eigen::VectorXd::Zero(X_WA.rows()), )
-          
-          
+          }      
 
           if (prog.SolveWithCollisionPointsGuess(*solver, closest_collision_info.first, p_AA_guess, p_BB_guess, options.solver_options, &closest)) {
             AddTangentToPolytope(E, closest, options.configuration_space_margin,
