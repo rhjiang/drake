@@ -84,9 +84,18 @@ class ClosestCollisionProgram {
              const std::optional<solvers::SolverOptions>& solver_options,
              Eigen::VectorXd* closest);
 
+  bool SolveWithCollisionPointsGuess(const solvers::SolverInterface& solver,
+             const Eigen::Ref<const Eigen::VectorXd>& q_guess,
+             const Eigen::Ref<const Eigen::VectorXd>& p_AA_guess,
+             const Eigen::Ref<const Eigen::VectorXd>& p_BB_guess,
+             const std::optional<solvers::SolverOptions>& solver_options,
+             Eigen::VectorXd* closest);
+
  private:
   solvers::MathematicalProgram prog_;
   solvers::VectorXDecisionVariable q_;
+  solvers::VectorXDecisionVariable p_AA;
+  solvers::VectorXDecisionVariable p_BB;
   std::optional<solvers::Binding<solvers::LinearConstraint>> P_constraint_{};
 };
 }  // namespace internal

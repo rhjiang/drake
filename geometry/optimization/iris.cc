@@ -918,7 +918,50 @@ HPolyhedron RayIris(const MultibodyPlant<double>& plant,
             same_point_constraint, *frames.at(collision_pair.geomA), *frames.at(collision_pair.geomB),
             *sets.at(collision_pair.geomA), *sets.at(collision_pair.geomB), E,
             A.topRows(num_constraints), b.head(num_constraints));
-          if (prog.Solve(*solver, closest_collision_info.first, options.solver_options, &closest)) {
+
+          // calculate points in collision
+          plant.SetPositions(mutable_context, closest_collision_info.first);
+          solvers::MathematicalProgram collision_points_prog;
+          solvers::VectorXDecisionVariable p_AA = collision_points_prog.NewContinuousVariables(3, "p_AA");
+          solvers::VectorXDecisionVariable p_BB = collision_points_prog.NewContinuousVariables(3, "p_BB");
+
+          sets.at(collision_pair.geomA)->AddPointInSetConstraints(&collision_points_prog, p_AA);
+          sets.at(collision_pair.geomB)->AddPointInSetConstraints(&collision_points_prog, p_BB);
+
+          const math::RigidTransform<double>& X_WA =
+              plant.EvalBodyPoseInWorld(*mutable_context, frames.at(collision_pair.geomA)->body());
+          const math::RigidTransform<double>& X_WB =
+              plant.EvalBodyPoseInWorld(*mutable_context, frames.at(collision_pair.geomB)->body());
+
+          // collision_points_prog.AddLinearEqualityConstraint(X_WA.rotation().matrix() * p_AA + X_WA.translation() == X_WB.rotation().matrix() * p_BB + X_WB.translation());
+
+          Eigen::MatrixXd concatenated_transform(3, 6);
+          concatenated_transform << X_WA.rotation().matrix(), -X_WB.rotation().matrix();
+          solvers::VectorXDecisionVariable concatenated_points(6);
+          concatenated_points << p_AA, p_BB;
+          collision_points_prog.AddLinearEqualityConstraint(concatenated_transform, X_WB.translation() - X_WA.translation(), concatenated_points);
+
+
+          auto result = solvers::Solve(collision_points_prog);
+          Eigen::VectorXd p_AA_guess;
+          Eigen::VectorXd p_BB_guess;
+          if (result.is_success()) {
+            p_AA_guess = result.GetSolution(p_AA);
+            p_BB_guess = result.GetSolution(p_BB);
+          } else {
+            log()->info("failed to find closest pts");
+            p_AA_guess = Eigen::Vector3d::Constant(.01);
+            p_BB_guess = Eigen::Vector3d::Constant(.01);
+          }
+
+          // Eigen::MatrixXd concatenated_transform(X_WA.rows(), X_WA.cols() + X_WB.cols());
+          // concatenated_transform << X_WA, X_WB;
+
+          // collision_points_prog.AddLinearEqualityConstraint(concatenated_transform, Eigen::VectorXd::Zero(X_WA.rows()), )
+          
+          
+
+          if (prog.SolveWithCollisionPointsGuess(*solver, closest_collision_info.first, p_AA_guess, p_BB_guess, options.solver_options, &closest)) {
             AddTangentToPolytope(E, closest, options.configuration_space_margin,
                                 &A, &b, &num_constraints);
             P_candidate =

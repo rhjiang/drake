@@ -124,8 +124,8 @@ ClosestCollisionProgram::ClosestCollisionProgram(
                                        es.eigenvalues().minCoeff());
   prog_.AddQuadraticErrorCost(scale * Asq, E.center(), q_);
 
-  auto p_AA = prog_.NewContinuousVariables<3>("p_AA");
-  auto p_BB = prog_.NewContinuousVariables<3>("p_BB");
+  p_AA = prog_.NewContinuousVariables<3>("p_AA");
+  p_BB = prog_.NewContinuousVariables<3>("p_BB");
   setA.AddPointInSetConstraints(&prog_, p_AA);
   setB.AddPointInSetConstraints(&prog_, p_BB);
 
@@ -155,6 +155,25 @@ bool ClosestCollisionProgram::Solve(
     const std::optional<solvers::SolverOptions>& solver_options,
     VectorXd* closest) {
   prog_.SetInitialGuess(q_, q_guess);
+  solvers::MathematicalProgramResult result;
+  solver.Solve(prog_, std::nullopt, solver_options, &result);
+  if (result.is_success()) {
+    *closest = result.GetSolution(q_);
+    return true;
+  }
+  return false;
+}
+
+bool ClosestCollisionProgram::SolveWithCollisionPointsGuess(
+    const solvers::SolverInterface& solver,
+    const Eigen::Ref<const Eigen::VectorXd>& q_guess,
+    const Eigen::Ref<const Eigen::VectorXd>& p_AA_guess,
+    const Eigen::Ref<const Eigen::VectorXd>& p_BB_guess,
+    const std::optional<solvers::SolverOptions>& solver_options,
+    VectorXd* closest) {
+  prog_.SetInitialGuess(q_, q_guess);
+  prog_.SetInitialGuess(p_AA, p_AA_guess);
+  prog_.SetInitialGuess(p_BB, p_BB_guess);
   solvers::MathematicalProgramResult result;
   solver.Solve(prog_, std::nullopt, solver_options, &result);
   if (result.is_success()) {
